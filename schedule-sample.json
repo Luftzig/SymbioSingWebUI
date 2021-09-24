@@ -1,0 +1,14 @@
+[
+  {
+    "startTime": "5",
+    "portByte": 17,
+    "action": "-",
+    "pwmVal": "255"
+  },
+  {
+    "startTime": "2000",
+    "portByte": 31,
+    "action": "!",
+    "pwmVal": "255"
+  }
+]
