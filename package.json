@@ -11,6 +11,9 @@
     "start": "parcel",
     "build": "parcel build"
   },
+  "dependencies": {
+    "flow-io-web-lib": "../flow-io-web-lib"
+  },
   "devDependencies": {
     "@parcel/transformer-elm": "2.0.0-rc.0",
     "elm": "^0.19.1-5",

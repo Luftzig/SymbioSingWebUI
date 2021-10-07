@@ -10,64 +10,7 @@
 <!--    <script type="module" src="scheduler.js"></script>-->
   </head>
   <body>
-    <h2>Control + Schedule</h2>
-    <div class="grid-parent"><!--BEGIN: Parent grid-->
-      <div class="grid-sidebar"><!--BEGIN: Sidebar grid-->
-        <div><!--Begin Connect / Disconnect section-->
-          <button class="button icon-disconnected" id="reconnect_btn0" visible autofocus onclick="reconnectDevice(flowios[0])" type="button" title="Device is disconnected. Press to reconnect." ></button>
-          <button class="button icon-connected" id="disconnect_btn0" hidden onclick="disconnectDevice(flowios[0])" type="button" title="Device is connected. Press to disconnect."></button>
-          <button class="button icon-loading" hidden id="loading_btn0" type="button" title="Waiting for connection..."></button>
-        </div><!--End Connect / Disconnect section-->
-      </div><!-- END: Sidebar grid-->
-      <hr>
-      <div class="grid-leftColumn"><!--Begin nested grid (left)-->
-        <div style="grid-area: title;">
-          <h3>Config / Control</h3>
-          <hr>
-        </div>
-        <p style="grid-area: pwmvac">Vacuum PWM: <span id="pwm_o_label0"></span><br><input class='x0' oninput="setPump2PWM(flowios[0])" type="range" id="pwm_o0" min="100" max="255" value="255" disabled> </p>
-        <p style="grid-area: pwminf">Inflation PWM:  <span id="pwm_i_label0"></span><br><input class='x0' oninput="setPump1PWM(flowios[0])" type="range" id="pwm_i0" min="100" max="255" value="255" disabled></p>
-        <div class="bordered center marginRight" style="grid-area: ctrls; z-index: 1;">
-            <div class="inmiddle">
-              <button class="x0 button icon-inflate" onmousedown="flowios[0].startInflation(getSelectedPorts(flowios[0]))" onmouseup="flowios[0].stopAction(getSelectedPorts(flowios[0]))" type="button" disabled title="Inflate"></button>
-              <button class="x0 button icon-vacuum" onmousedown="flowios[0].startVacuum(getSelectedPorts(flowios[0]))" onmouseup="flowios[0].stopAction(getSelectedPorts(flowios[0]))" type="button" disabled title="Vacuum"></button>
-              <button class="x0 button icon-release" onmousedown="flowios[0].startRelease(getSelectedPorts(flowios[0]))" onmouseup="flowios[0].stopAction(getSelectedPorts(flowios[0]))" type="button" disabled title="Release"></button>
-              <button class="x0 button icon-stop" onclick="flowios[0].stopAllActions()" type="button" disabled title="Stop all actions"></button>
-            </div>
-            <div class="checkboxes">
-              <input class='x0' type="checkbox" id="port1_chk0" value="1" disabled>
-              <input class='x0' type="checkbox" id="port2_chk0" value="2" disabled>
-              <input class='x0' type="checkbox" id="port3_chk0" value="3" disabled>
-              <input class='x0' type="checkbox" id="port4_chk0" value="4" disabled>
-              <input class='x0' type="checkbox" id="port5_chk0" value="5" disabled>
-            </div>
-        </div>
-        <div style="grid-area: flowio;" class="flowiographic" id="flowiographic0">
-          <!-- Insert the SVG graphic here -->
-        </div>
-      </div><!-- End Left grid-->
-      <hr>
-      <div class="scheduler-area"><!--Begin Center grid-->
-          <div id="scheduler"></div>
-      </div><!--End Center grid-->
-      <hr>
-      <div class="grid-rightColumn"><!--Begin Log column-->
-        <div>
-          <h3>Log</h3>
-        </div>
-        <div>
-          <textarea readonly class="x0 log" id='log0' disabled></textarea><br>
-        </div>
-        <div>
-          <button class="btn-log" onclick="clearLog(flowios[0])" type="button">Clear Log</button>
-        </div>
-      </div><!--End Log column-->
-    </div><!--END grid-container-->
+  <div id="app-root"></div>
+  <script type="module" src="index.js"></script>
   </body>
-  <!--Load all the JS files at AFTER the HTML body so you can access HTML elements -->
-  <script type="module" src="toBinaryString.js"></script>
-  <script type="module" src="main.js"></script> <!--this must be loaded first b/c it defines the listOfServices array.-->
-  <!--The type="module" other .js files can be loaded in any order-->
-  <script type="module" src="controlService.js"></script>
-  <script type="module" src="svginjector.js"></script>
 </html>
