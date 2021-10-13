@@ -4,6 +4,7 @@ import Array exposing (Array)
 import Array.Extra
 import Browser
 import Element as UI
+import Element.Background as UIBackground
 import Element.Border as UIBorder
 import Element.Font as UIFont
 import Element.Input as UIInput
@@ -204,16 +205,40 @@ body model =
     UI.layout [ UI.width <| UI.fill, UI.height <| UI.fill, UI.padding 20 ] <|
         UI.column [ UI.width <| UI.fill, UI.height <| UI.fill ]
             [ header
-            , UI.row [UI.spacing 10]
-                [ devices model
+            , UI.row [ UI.spacing 10 ]
+                [ displayDeviceList model
+                , displayHardwareStatus model
                 , UI.el [] <| UI.text "Placeholder for scheduler"
                 ]
             , footer
             ]
 
 
-devices : Model -> UI.Element Msg
-devices model =
+darkGrey : UI.Color
+darkGrey =
+    UI.rgb 0.2 0.2 0.2
+
+
+transparent : UI.Color
+transparent =
+    UI.rgba 0 0 0 0
+
+
+white : UI.Color
+white =
+    UI.rgb 1 1 1
+
+
+bottomBorder =
+    UIBorder.widthEach { bottom = 2, left = 0, right = 0, top = 0 }
+
+
+rightBorder =
+    UIBorder.widthEach { bottom = 0, left = 0, right = 2, top = 0 }
+
+
+displayDeviceList : Model -> UI.Element Msg
+displayDeviceList model =
     let
         showDevice : Int -> FlowIODevice -> UI.Element Msg
         showDevice index device =
@@ -250,12 +275,6 @@ devices model =
             UI.row [ UI.width UI.fill ]
                 [ UI.el [] <| UI.text "+"
                 ]
-
-        bottomBorder =
-            UIBorder.widthEach { bottom = 2, left = 0, right = 0, top = 0 }
-
-        rightBorder =
-            UIBorder.widthEach { bottom = 0, left = 0, right = 2, top = 0 }
     in
     UI.column [ UI.width <| UI.fillPortion 2, UI.spacing 5, rightBorder, UI.padding 5 ]
         (listHeader
@@ -265,6 +284,95 @@ devices model =
                     |> Array.toList
                )
             ++ [ buttons ]
+        )
+
+
+displayHardwareStatus : Model -> UI.Element Msg
+displayHardwareStatus { devices } =
+    let
+        displayStatus : Int -> FlowIODevice -> Maybe (UI.Element Msg)
+        displayStatus index device =
+            case ( device.status, device.controlServiceStatus ) of
+                ( Connected, Just hardwareStatus ) ->
+                    Just <|
+                        UI.column []
+                            [ UI.text ("Status for " ++ String.fromInt (index + 1))
+                            , displayStatusDetails hardwareStatus
+                            ]
+
+                _ ->
+                    Nothing
+
+        displayStatusDetails : ControlServiceStatus -> UI.Element Msg
+        displayStatusDetails details =
+            let
+                displayPort label status =
+                    UI.el
+                        [ UI.width <| UI.px 16
+                        , UI.height <| UI.px 16
+                        , UIBorder.width 2
+                        , UIBackground.color
+                            (if status then
+                                darkGrey
+
+                             else
+                                white
+                            )
+                        , UIFont.size 10
+                        , UIFont.color
+                            (if status then
+                                white
+
+                             else
+                                darkGrey
+                            )
+                        ]
+                    <|
+                        UI.text label
+            in
+            UI.column [ UI.spacing 2 ]
+                [ if details.active then
+                    UI.text "Active"
+
+                  else
+                    UI.text "Inactive"
+                , UI.row [ UI.spacing 2 ]
+                    [ displayPort "In" details.inlet
+                    , displayPort "1" details.port1
+                    , displayPort "2" details.port2
+                    , displayPort "3" details.port3
+                    , displayPort "4" details.port4
+                    , displayPort "5" details.port5
+                    , displayPort "Out" details.outlet
+                    ]
+                , UI.row [ UI.spaceEvenly ]
+                    [ UI.text
+                        ("Pump 1: "
+                            ++ (if details.pump1 then
+                                    "Active"
+
+                                else
+                                    "Inactive"
+                               )
+                        )
+                    , UI.text
+                        ("Pump 2: "
+                            ++ (if details.pump2 then
+                                    "Active"
+
+                                else
+                                    "Inactive"
+                               )
+                        )
+                    ]
+                ]
+
+        listHeader =
+            UI.el [ UI.width UI.fill ] <| UI.text "Hardware Status"
+    in
+    UI.column [ UI.alignTop, UI.width <| UI.fillPortion 2, UI.spacing 5, rightBorder, UI.padding 5 ]
+        (listHeader
+            :: (Array.Extra.indexedMapToList displayStatus devices |> List.filterMap identity)
         )
 
 
