@@ -27,6 +27,7 @@ type FlowIOStatus
 
 type FlowIOService
     = ControlService
+    | ConfigService
 
 
 type alias ControlServiceStatus =
@@ -42,6 +43,14 @@ type alias ControlServiceStatus =
     , active : Bool
     , lastCommand : Maybe FlowIOCommand
     }
+
+
+type Configuration
+    = Standard
+    | InflationSeries
+    | InflationParallel
+    | VacuumSeries
+    | VacuumParallel
 
 
 
@@ -196,3 +205,63 @@ controlCommandDecoder =
         commandActionDecoder
         pwmValueDecoder
         portsDecoder
+
+
+configurationEncoding : Configuration -> Int
+configurationEncoding configuration =
+    case configuration of
+        Standard ->
+            0
+
+        InflationSeries ->
+            1
+
+        InflationParallel ->
+            2
+
+        VacuumSeries ->
+            3
+
+        VacuumParallel ->
+            4
+
+
+configurationDecoding : Int -> Maybe Configuration
+configurationDecoding int =
+    case int of
+        0 ->
+            Just Standard
+
+        1 ->
+            Just InflationSeries
+
+        2 ->
+            Just InflationParallel
+
+        3 ->
+            Just VacuumSeries
+
+        4 ->
+            Just VacuumParallel
+
+        _ ->
+            Nothing
+
+
+configurationToString : Configuration -> String
+configurationToString configuration =
+    case configuration of
+        Standard ->
+            "General"
+
+        InflationSeries ->
+            "Inflation Series"
+
+        InflationParallel ->
+            "Inflation Parallel"
+
+        VacuumSeries ->
+            "Vacuum Series"
+
+        VacuumParallel ->
+            "Vacuum Parallel"
