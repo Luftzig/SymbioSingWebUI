@@ -12,6 +12,7 @@ import Element.Input exposing (labelAbove, labelHidden)
 import File
 import File.Download
 import File.Select
+import FlowIO exposing (..)
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
@@ -39,36 +40,9 @@ type MilliSeconds
     = MilliSeconds Int
 
 
-type FlowIOAction
-    = Inflate
-    | Vacuum
-    | Release
-    | Stop
-
-
-type PortState
-    = Open
-    | Close
-
-
-type Port
-    = Port1
-    | Port2
-    | Port3
-    | Port4
-    | Port5
-
-
-type alias PortsState =
-    { port1 : PortState, port2 : PortState, port3 : PortState, port4 : PortState, port5 : PortState }
-
-
-type alias DeviceInstruction =
-    { action : FlowIOAction, pumpPwm : Int, ports : PortsState }
-
 
 type alias SchedulerInstruction =
-    { time : MilliSeconds, deviceInstructions : Dict String DeviceInstruction }
+    { time : MilliSeconds, deviceInstructions : Dict String FlowIOCommand }
 
 
 type FlowIODevice
@@ -147,7 +121,7 @@ millisToString ms =
             String.fromInt int
 
 
-getInstructionForDevice : SchedulerInstruction -> FlowIODevice -> Maybe DeviceInstruction
+getInstructionForDevice : SchedulerInstruction -> FlowIODevice -> Maybe FlowIOCommand
 getInstructionForDevice inst (FlowIODevice id) =
     Dict.get id inst.deviceInstructions
 
@@ -346,7 +320,7 @@ createNewInstruction devices existingInstructions =
                 |> List.maximum
                 |> Maybe.withDefault -1
 
-        defaultDeviceInstruction : DeviceInstruction
+        defaultDeviceInstruction : FlowIOCommand
         defaultDeviceInstruction =
             { action = Stop
             , pumpPwm = 255
@@ -367,7 +341,7 @@ update msg model =
         updateDeviceInstruction :
             Int
             -> FlowIODevice
-            -> (DeviceInstruction -> DeviceInstruction)
+            -> (FlowIOCommand -> FlowIOCommand)
             -> Array SchedulerInstruction
             -> Array SchedulerInstruction
         updateDeviceInstruction index (FlowIODevice id) updater instructions =
@@ -549,82 +523,10 @@ encodeInstructions instructions =
 
 instructionsDecoder : JD.Decoder (Array SchedulerInstruction)
 instructionsDecoder =
-    let
-        decoderActions : JD.Decoder FlowIOAction
-        decoderActions =
-            JD.field "action" JD.string
-                |> JD.andThen
-                    (\string ->
-                        case String.trim string of
-                            "+" ->
-                                JD.succeed Inflate
-
-                            "-" ->
-                                JD.succeed Vacuum
-
-                            "&" ->
-                                JD.succeed Release
-
-                            "!" ->
-                                JD.succeed Stop
-
-                            _ ->
-                                JD.fail ("Expected valid action symbol ('+-^!') but found '" ++ string ++ "'")
-                    )
-
-        decoderPwmVal : JD.Decoder Int
-        decoderPwmVal =
-            JD.field "pwmVal" JD.int
-                |> JD.andThen
-                    (\i ->
-                        case ( i < 100, i > 255 ) of
-                            ( True, _ ) ->
-                                JD.fail "Expected 'pwmVal' to be at least 100"
-
-                            ( _, True ) ->
-                                JD.fail "Expected 'pwmVal' to be at most 255"
-
-                            _ ->
-                                JD.succeed i
-                    )
-
-        decodePorts : JD.Decoder PortsState
-        decodePorts =
-            let
-                fromBool b =
-                    if b then
-                        Close
-
-                    else
-                        Open
-            in
-            JD.field "ports" <|
-                JD.map5
-                    (\p1 p2 p3 p4 p5 ->
-                        { port1 = fromBool p1
-                        , port2 = fromBool p2
-                        , port3 = fromBool p3
-                        , port4 = fromBool p4
-                        , port5 = fromBool p5
-                        }
-                    )
-                    (JD.index 0 JD.bool)
-                    (JD.index 1 JD.bool)
-                    (JD.index 2 JD.bool)
-                    (JD.index 3 JD.bool)
-                    (JD.index 4 JD.bool)
-
-        deviceInstructionsDecoder : JD.Decoder DeviceInstruction
-        deviceInstructionsDecoder =
-            JD.map3 (\action pwm ports -> { action = action, pumpPwm = pwm, ports = ports })
-                decoderActions
-                decoderPwmVal
-                decodePorts
-    in
     JD.array <|
         JD.map2 (\startTime devices -> { time = MilliSeconds startTime, deviceInstructions = devices })
             (JD.field "startTime" JD.int)
-            (JD.field "instructions" (JD.dict deviceInstructionsDecoder))
+            (JD.field "instructions" (JD.dict controlCommandDecoder))
 
 
 subscriptions : Model -> Sub Msg
