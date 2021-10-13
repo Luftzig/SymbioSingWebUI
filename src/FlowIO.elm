@@ -2,6 +2,7 @@ module FlowIO exposing (..)
 
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
+import Json.Encode as JE
 
 
 
@@ -265,3 +266,40 @@ configurationToString configuration =
 
         VacuumParallel ->
             "Vacuum Parallel"
+
+
+-- Encoders
+encodeCommand : FlowIOCommand -> JE.Value
+encodeCommand inst =
+    JE.object
+        [ ( "action", encodeAction inst.action )
+        , ( "pwmVal", JE.int inst.pumpPwm )
+        , ( "ports"
+          , JE.list JE.bool
+                [ inst.ports.port1 == Open
+                , inst.ports.port2 == Open
+                , inst.ports.port3 == Open
+                , inst.ports.port4 == Open
+                , inst.ports.port5 == Open
+                ]
+          )
+        ]
+
+encodeAction : FlowIOAction -> JE.Value
+encodeAction action =
+    let
+        symbol =
+            case action of
+                Inflate ->
+                    "+"
+
+                Vacuum ->
+                    "-"
+
+                Release ->
+                    "^"
+
+                Stop ->
+                    "!"
+    in
+    JE.string symbol

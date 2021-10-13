@@ -476,46 +476,11 @@ update msg model =
 
 encodeInstructions : Array SchedulerInstruction -> JE.Value
 encodeInstructions instructions =
-    let
-        encodeDeviceInstruction inst =
-            JE.object
-                [ ( "action", encodeAction inst.action )
-                , ( "pwmVal", JE.int inst.pumpPwm )
-                , ( "ports"
-                  , JE.list JE.bool
-                        [ inst.ports.port1 == Open
-                        , inst.ports.port2 == Open
-                        , inst.ports.port3 == Open
-                        , inst.ports.port4 == Open
-                        , inst.ports.port5 == Open
-                        ]
-                  )
-                ]
-
-        encodeAction : FlowIOAction -> JE.Value
-        encodeAction action =
-            let
-                symbol =
-                    case action of
-                        Inflate ->
-                            "+"
-
-                        Vacuum ->
-                            "-"
-
-                        Release ->
-                            "^"
-
-                        Stop ->
-                            "!"
-            in
-            JE.string symbol
-    in
     JE.array
         (\inst ->
             JE.object
                 [ ( "startTime", JE.string <| millisToString inst.time )
-                , ( "instructions", JE.dict identity encodeDeviceInstruction inst.deviceInstructions )
+                , ( "instructions", JE.dict identity encodeCommand inst.deviceInstructions )
                 ]
         )
         instructions

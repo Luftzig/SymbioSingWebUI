@@ -11,8 +11,10 @@ import Element.Input as UIInput
 import FlowIO exposing (..)
 import Html
 import Json.Decode exposing (Value, decodeValue)
+import Json.Encode
 import List.Extra as LE
 import Scheduler
+import Task
 
 
 type alias Model =
@@ -22,16 +24,18 @@ type alias Model =
 
 
 type Msg
-    = ConnectToDevice Int
+    = AddDevice
+    | ConnectToDevice Int
     | DeviceStatusChanged { deviceIndex : Int, status : String, details : Maybe DeviceDetails }
     | RequestControlServiceUpdates Int
     | DisconnectDevice Int
     | ControlServiceUpdate { deviceIndex : Int, status : Value }
+    | SendCommand Int FlowIOCommand
 
 
 initModel : Model
 initModel =
-    { devices = Array.fromList [ defaultDevice ]
+    { devices = Array.empty
     , listeners = []
     }
 
@@ -54,10 +58,13 @@ port controlServiceStatusChanged : ({ deviceIndex : Int, status : Value } -> msg
 port listenToControlService : Int -> Cmd msg
 
 
+port sendCommand : { deviceIndex : Int, command : Json.Encode.Value } -> Cmd msg
+
+
 main : Program () Model Msg
 main =
     Browser.document
-        { init = \() -> ( initModel, createDevice () )
+        { init = \() -> ( initModel, Task.perform (\() -> AddDevice) (Task.succeed ()) )
         , subscriptions = subscriptions
         , update = update
         , view = view
@@ -192,6 +199,13 @@ update msg model =
                     , Cmd.none
                     )
 
+        AddDevice ->
+            ( { model | devices = Array.push defaultDevice model.devices }, createDevice () )
+
+        SendCommand deviceIndex command ->
+            -- TODO: Maybe we should update the model to reflect that?
+            ( model, sendCommand { deviceIndex = deviceIndex, command = encodeCommand command } )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -205,10 +219,10 @@ body model =
     UI.layout [ UI.width <| UI.fill, UI.height <| UI.fill, UI.padding 20 ] <|
         UI.column [ UI.width <| UI.fill, UI.height <| UI.fill ]
             [ header
-            , UI.row [ UI.spacing 10 ]
+            , UI.row [ UI.spacing 10, UI.width UI.fill, UI.height <| UI.fillPortion 10, UI.alignTop ]
                 [ displayDeviceList model
                 , displayHardwareStatus model
-                , UI.el [] <| UI.text "Placeholder for scheduler"
+                , UI.el [UI.width <| UI.fillPortion 8] <| UI.text "Placeholder for scheduler"
                 ]
             , footer
             ]
@@ -276,7 +290,7 @@ displayDeviceList model =
                 [ UI.el [] <| UI.text "+"
                 ]
     in
-    UI.column [ UI.width <| UI.fillPortion 2, UI.spacing 5, rightBorder, UI.padding 5 ]
+    UI.column [ UI.alignTop, UI.width <| UI.fillPortion 2, UI.spacing 5, rightBorder, UI.padding 5 ]
         (listHeader
             :: (Array.indexedMap
                     showDevice

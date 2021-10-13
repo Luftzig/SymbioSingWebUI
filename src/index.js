@@ -50,6 +50,15 @@ app.ports.listenToControlService.subscribe(deviceIndex => {
   )
 })
 
+app.ports.sendCommand.subscribe(( {deviceIndex, command} ) => {
+  const device /* : FlowIo */ = flowIoDevices[deviceIndex]
+  if (device == null) {
+    console.error("Requested to send command to device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
+    return
+  }
+  device.services[ControlService.name].sendCommand(command)
+})
+
 // function sendFlowIOsChanged() {
 //   const values = flowios.map(flowio => ({
 //     id: flowio.instanceNumber,
