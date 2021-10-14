@@ -61,10 +61,16 @@ port listenToControlService : Int -> Cmd msg
 port sendCommand : { deviceIndex : Int, command : Json.Encode.Value } -> Cmd msg
 
 
+sendMessage : msg -> Cmd msg
+sendMessage msg =
+    Task.perform (\() -> msg) <|
+        Task.succeed ()
+
+
 main : Program () Model Msg
 main =
     Browser.document
-        { init = \() -> ( initModel, Task.perform (\() -> AddDevice) (Task.succeed ()) )
+        { init = \() -> ( initModel, sendMessage AddDevice )
         , subscriptions = subscriptions
         , update = update
         , view = view
@@ -118,10 +124,17 @@ update msg model =
                 Just device ->
                     case status of
                         "connected" ->
-                            ( { model | devices = Array.Extra.update deviceIndex (setStatusTo Connected >> setDetailsTo details) model.devices }, Cmd.none )
+                            ( { model | devices = Array.Extra.update deviceIndex (setStatusTo Connected >> setDetailsTo details) model.devices }
+                            , sendMessage (RequestControlServiceUpdates deviceIndex)
+                            )
 
                         "disconnected" ->
-                            ( { model | devices = Array.Extra.update deviceIndex (setStatusTo NotConnected) model.devices }, Cmd.none )
+                            ( { model
+                                | devices = Array.Extra.update deviceIndex (setStatusTo NotConnected) model.devices
+                                , listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
+                              }
+                            , Cmd.none
+                            )
 
                         _ ->
                             ( { model | devices = Array.Extra.update deviceIndex (setStatusTo Pending) model.devices }, Cmd.none )
@@ -222,7 +235,7 @@ body model =
             , UI.row [ UI.spacing 10, UI.width UI.fill, UI.height <| UI.fillPortion 10, UI.alignTop ]
                 [ displayDeviceList model
                 , displayHardwareStatus model
-                , UI.el [UI.width <| UI.fillPortion 8] <| UI.text "Placeholder for scheduler"
+                , UI.el [ UI.width <| UI.fillPortion 8 ] <| UI.text "Placeholder for scheduler"
                 ]
             , footer
             ]

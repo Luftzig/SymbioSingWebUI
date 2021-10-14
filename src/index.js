@@ -8,7 +8,7 @@ const flowIoDevices /*: FlowIo[]*/ = []
 let app = Elm.Main.init({node: document.getElementById('app-root')});
 
 app.ports.createDevice.subscribe(() => {
-  const flowIo = new FlowIo([new ControlService()])
+  const flowIo = new FlowIo({control: new ControlService()})
   flowIoDevices.push(flowIo)
 })
 
@@ -20,11 +20,12 @@ app.ports.connectToDevice.subscribe(deviceIndex => {
   }
   device.connect({requestedServices: DEFAULT_SERVICES.concat([ControlService.uuid])})
     .then(() => {
-      app.ports.deviceStatusChanged.send({
+      const deviceConnectionStatus = {
         deviceIndex,
         status: 'connected',
         details: {name: device.name, id: device.id, services: Object.keys(device.services)}
-      })
+      }
+      app.ports.deviceStatusChanged.send(deviceConnectionStatus)
       device.connection.subscribe("disconnected", (_) => {
         app.ports.deviceStatusChanged.send({
           deviceIndex,
@@ -45,7 +46,7 @@ app.ports.listenToControlService.subscribe(deviceIndex => {
     console.error("Requested to listen on device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
     return
   }
-  device.services[ControlService.name].onStatusUpdated(status =>
+  device.services.control.onStatusUpdated(status =>
     app.ports.controlServiceStatusChanged.send({deviceIndex, status})
   )
 })
@@ -56,17 +57,5 @@ app.ports.sendCommand.subscribe(( {deviceIndex, command} ) => {
     console.error("Requested to send command to device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
     return
   }
-  device.services[ControlService.name].sendCommand(command)
+  device.services.control.sendCommand(command)
 })
-
-// function sendFlowIOsChanged() {
-//   const values = flowios.map(flowio => ({
-//     id: flowio.instanceNumber,
-//     isConnected: flowio.isConnected,
-//   }))
-//   console.log("Sending: ", values)
-//   scheduler.ports.flowIOsChange.send(values)
-// }
-// scheduler.ports.executeInstructions.subscribe(function (instructions) {
-//   // TODO
-// })
