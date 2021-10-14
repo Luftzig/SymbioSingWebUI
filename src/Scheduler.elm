@@ -374,6 +374,11 @@ update msg model =
 
                 Port5 ->
                     { ports | port5 = newState }
+
+                _ ->
+                    -- Warning we do not allow manipulation of inlet/outlet ports here
+                    ports
+
     in
     case msg of
         AddInstruction ->

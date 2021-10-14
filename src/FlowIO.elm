@@ -42,7 +42,7 @@ type alias ControlServiceStatus =
     , port4 : Bool
     , port5 : Bool
     , active : Bool
-    , lastCommand : Maybe FlowIOCommand
+    , command : FlowIOCommand
     }
 
 
@@ -81,6 +81,84 @@ setControlServiceStatusTo newStatus device =
     { device | controlServiceStatus = Just newStatus }
 
 
+defaultCommand : FlowIOCommand
+defaultCommand =
+    { action = Inflate
+    , ports = { port1 = Close, port2 = Close, port3 = Close, port4 = Close, port5 = Close }
+    , pumpPwm = 0
+    }
+
+
+getLastCommand : FlowIODevice -> Maybe FlowIOCommand
+getLastCommand device =
+    Maybe.map .command device.controlServiceStatus
+
+
+setLastCommand : FlowIOCommand -> FlowIODevice -> FlowIODevice
+setLastCommand command device =
+    { device | controlServiceStatus = Maybe.map (\control -> { control | command = command }) device.controlServiceStatus }
+
+
+updateCommandFromStatus : ControlServiceStatus -> FlowIOCommand -> FlowIOCommand
+updateCommandFromStatus status command =
+    let
+        newPorts =
+            { port1 = portFromBool status.port1
+            , port2 = portFromBool status.port2
+            , port3 = portFromBool status.port3
+            , port4 = portFromBool status.port4
+            , port5 = portFromBool status.port5
+            }
+    in
+    { command | ports = newPorts }
+
+
+setPort : Port -> PortState -> FlowIOCommand -> FlowIOCommand
+setPort port_ portState command =
+    let
+        ports =
+            command.ports
+
+        newPorts =
+            case port_ of
+                Port1 ->
+                    { ports | port1 = portState }
+
+                Port2 ->
+                    { ports | port2 = portState }
+
+                Port3 ->
+                    { ports | port3 = portState }
+
+                Port4 ->
+                    { ports | port4 = portState }
+
+                Port5 ->
+                    { ports | port5 = portState }
+
+                Inlet ->
+                    ports
+
+                Outlet ->
+                    ports
+    in
+    { command | ports = newPorts }
+
+
+setAction : FlowIOAction -> FlowIOCommand -> FlowIOCommand
+setAction action command =
+    { command | action = action }
+
+
+setPumpPwm : Int -> FlowIOCommand -> FlowIOCommand
+setPumpPwm pwm command =
+    if pwm >= 0 && pwm <= 0xFF then
+        { command | pumpPwm = pwm }
+
+    else
+        Debug.log ("Got PWM value out of range " ++ Debug.toString pwm) command
+
+
 
 -- Device Command Types
 
@@ -103,6 +181,8 @@ type Port
     | Port3
     | Port4
     | Port5
+    | Inlet
+    | Outlet
 
 
 type alias PortsState =
@@ -130,7 +210,7 @@ controlServiceStatusDecoder =
         |> required "port4" JD.bool
         |> required "port5" JD.bool
         |> required "active" JD.bool
-        |> optional "lastCommand" (JD.maybe controlCommandDecoder) Nothing
+        |> optional "lastCommand" controlCommandDecoder defaultCommand
 
 
 commandActionDecoder : JD.Decoder FlowIOAction
@@ -139,14 +219,26 @@ commandActionDecoder =
         |> JD.andThen
             (\string ->
                 case String.trim string of
+                    "inflate" ->
+                        JD.succeed Inflate
+
                     "+" ->
                         JD.succeed Inflate
+
+                    "vacuum" ->
+                        JD.succeed Vacuum
 
                     "-" ->
                         JD.succeed Vacuum
 
+                    "release" ->
+                        JD.succeed Release
+
                     "&" ->
                         JD.succeed Release
+
+                    "stop" ->
+                        JD.succeed Stop
 
                     "!" ->
                         JD.succeed Stop
@@ -268,22 +360,50 @@ configurationToString configuration =
             "Vacuum Parallel"
 
 
+
 -- Encoders
+
+
 encodeCommand : FlowIOCommand -> JE.Value
 encodeCommand inst =
     JE.object
         [ ( "action", encodeAction inst.action )
-        , ( "pwmVal", JE.int inst.pumpPwm )
+        , ( "pumpPwm", JE.int inst.pumpPwm )
         , ( "ports"
           , JE.list JE.bool
-                [ inst.ports.port1 == Open
-                , inst.ports.port2 == Open
-                , inst.ports.port3 == Open
-                , inst.ports.port4 == Open
-                , inst.ports.port5 == Open
+                [ isPortOpen inst.ports.port1
+                , isPortOpen inst.ports.port2
+                , isPortOpen inst.ports.port3
+                , isPortOpen inst.ports.port4
+                , isPortOpen inst.ports.port5
                 ]
           )
         ]
+
+
+portFromBool : Bool -> PortState
+portFromBool bool =
+    if bool then
+        Open
+
+    else
+        Close
+
+
+isPortOpen : PortState -> Bool
+isPortOpen portState =
+    portState == Open
+
+
+togglePort : PortState -> PortState
+togglePort portState =
+    case portState of
+        Open ->
+            Close
+
+        Close ->
+            Open
+
 
 encodeAction : FlowIOAction -> JE.Value
 encodeAction action =
@@ -291,15 +411,15 @@ encodeAction action =
         symbol =
             case action of
                 Inflate ->
-                    "+"
+                    "inflate"
 
                 Vacuum ->
-                    "-"
+                    "vacuum"
 
                 Release ->
-                    "^"
+                    "release"
 
                 Stop ->
-                    "!"
+                    "stop"
     in
     JE.string symbol
