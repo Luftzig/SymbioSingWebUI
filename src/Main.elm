@@ -11,17 +11,18 @@ import Element.Input as UIInput
 import Element.Region as UIRegion
 import FlowIO exposing (..)
 import Html
-import Html.Attributes
 import Json.Decode exposing (Value, decodeValue)
 import Json.Encode
 import List.Extra as LE
 import Scheduler
+import Styles exposing (bottomBorder, buttonCssIcon, darkGrey, grey, rightBorder, rust, white)
 import Task
 
 
 type alias Model =
     { devices : Array FlowIODevice
     , listeners : List { deviceIndex : Int, to : FlowIOService, shouldListen : Bool }
+    , scheduler : Scheduler.Model
     }
 
 
@@ -37,12 +38,14 @@ type Msg
     | ChangeCommandPortState Int FlowIO.Port FlowIO.PortState
     | ChangeCommandPwm Int Int
     | ChangeCommandAction Int FlowIO.FlowIOAction
+    | SchedulerMessage Scheduler.Msg
 
 
 initModel : Model
 initModel =
     { devices = Array.empty
     , listeners = []
+    , scheduler = Scheduler.initModel
     }
 
 
@@ -113,6 +116,18 @@ subscriptions model =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
+        updateDevices : Array FlowIODevice -> Model -> Model
+        updateDevices newDevices model_ =
+            let
+                scheduler =
+                    model_.scheduler
+
+                (newScheduler, _) =
+                    Scheduler.update (Scheduler.DevicesChanged newDevices) scheduler
+
+            in
+            { model_ | devices = newDevices, scheduler = newScheduler }
+
         updateDevice : Int -> (FlowIODevice -> FlowIODevice) -> Array FlowIODevice
         updateDevice index updater =
             Array.Extra.update index updater model.devices
@@ -120,7 +135,7 @@ update msg model =
         updateCommand deviceIndex newCommand =
             case Array.get deviceIndex model.devices |> Maybe.map .controlServiceStatus of
                 Just _ ->
-                    { model | devices = updateDevice deviceIndex (setLastCommand newCommand) }
+                    updateDevices (updateDevice deviceIndex (setLastCommand newCommand)) model
 
                 Nothing ->
                     Debug.log ("Tried to update command to device " ++ String.fromInt deviceIndex ++ " that does not exist, or does not have a control service.") model
@@ -130,7 +145,7 @@ update msg model =
             case Array.get deviceIndex model.devices of
                 Just device ->
                     if device.status == NotConnected then
-                        ( { model | devices = updateDevice deviceIndex (setStatusTo Pending) }
+                        ( updateDevices (updateDevice deviceIndex (setStatusTo Pending)) model
                         , connectToDevice deviceIndex
                         )
 
@@ -142,23 +157,23 @@ update msg model =
 
         DeviceStatusChanged { deviceIndex, status, details } ->
             case Array.get deviceIndex model.devices of
-                Just device ->
+                Just _ ->
                     case status of
                         "connected" ->
-                            ( { model | devices = updateDevice deviceIndex (setStatusTo Connected >> setDetailsTo details) }
+                            ( updateDevices (updateDevice deviceIndex (setStatusTo Connected >> setDetailsTo details)) model
                             , sendMessage (RequestControlServiceUpdates deviceIndex)
                             )
 
                         "disconnected" ->
                             ( { model
-                                | devices = updateDevice deviceIndex (setStatusTo NotConnected)
-                                , listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
+                                | listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
                               }
+                                |> updateDevices (updateDevice deviceIndex (setStatusTo NotConnected))
                             , Cmd.none
                             )
 
                         _ ->
-                            ( { model | devices = updateDevice deviceIndex (setStatusTo Pending) }
+                            ( updateDevices (updateDevice deviceIndex (setStatusTo Pending)) model
                             , Cmd.none
                             )
 
@@ -198,9 +213,10 @@ update msg model =
                     case device.status of
                         Connected ->
                             ( { model
-                                | devices = updateDevice deviceIndex (setStatusTo NotConnected)
-                                , listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
+                                |  listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
                               }
+                              |>
+                              updateDevices (updateDevice deviceIndex (setStatusTo NotConnected))
                             , disconnectDevice deviceIndex
                             )
 
@@ -237,12 +253,12 @@ update msg model =
                                 { newStatus | command = Maybe.withDefault defaultCommand <| Maybe.map .command device.controlServiceStatus }
                                 device
                     in
-                    ( { model | devices = updateDevice deviceIndex updateControlStatus }
+                    (  model |> updateDevices (updateDevice deviceIndex updateControlStatus)
                     , Cmd.none
                     )
 
         AddDevice ->
-            ( { model | devices = Array.push defaultDevice model.devices }, createDevice () )
+            ( updateDevices (Array.push defaultDevice model.devices) model, createDevice () )
 
         RemoveDevice index ->
             Debug.todo "TODO: How should we handle removed devices?"
@@ -293,6 +309,12 @@ update msg model =
             in
             ( updateCommand deviceIndex newCommand, sendMessage <| SendCommand deviceIndex newCommand )
 
+        SchedulerMessage message ->
+            let
+                ( scheduler, cmd ) =
+                    Scheduler.update message model.scheduler
+            in
+            ( { model | scheduler = scheduler }, Cmd.map SchedulerMessage cmd )
 
 
 view : Model -> Browser.Document Msg
@@ -304,58 +326,27 @@ view model =
 
 body : Model -> Html.Html Msg
 body model =
-    UI.layout [ UI.width <| UI.fill, UI.height <| UI.fill, UI.padding 20 ] <|
+    UI.layout
+        [ UI.width <| UI.fill
+        , UI.height <| UI.fill
+        , UI.padding 20
+        , UIFont.family [ UIFont.typeface "Overpass", UIFont.typeface "Open Sans", UIFont.typeface "Helvetica", UIFont.sansSerif ]
+        , UIFont.size 15
+        ]
+    <|
         UI.column [ UI.width <| UI.fill, UI.height <| UI.fill ]
             [ header
             , UI.row [ UI.spacing 10, UI.width UI.fill, UI.height <| UI.fillPortion 10, UI.alignTop ]
                 [ displayDeviceList model
                 , displayHardwareStatus model
-                , UI.el [ UI.width <| UI.fillPortion 8 ] <| UI.text "Placeholder for scheduler"
+                , UI.el [ UI.width <| UI.fillPortion 8, UI.alignTop ] <|
+                    UI.map SchedulerMessage <|
+                        UI.html <|
+                            Scheduler.view model.scheduler
                 ]
             , footer
             ]
 
-
-rust =
-    UI.rgb255 183 65 14
-
-
-grey : UI.Color
-grey =
-    UI.rgb 0.5 0.5 0.5
-
-
-darkGrey : UI.Color
-darkGrey =
-    UI.rgb 0.2 0.2 0.2
-
-
-transparent : UI.Color
-transparent =
-    UI.rgba 0 0 0 0
-
-
-white : UI.Color
-white =
-    UI.rgb 1 1 1
-
-
-bottomBorder =
-    UIBorder.widthEach { bottom = 2, left = 0, right = 0, top = 0 }
-
-
-rightBorder =
-    UIBorder.widthEach { bottom = 0, left = 0, right = 2, top = 0 }
-
-
-externClass : String -> UI.Attribute Msg
-externClass class =
-    UI.htmlAttribute <| Html.Attributes.class class
-
-
-buttonCssIcon : String -> UI.Element Msg
-buttonCssIcon class =
-    UI.el [ UI.height <| UI.px 32, UI.width <| UI.px 32, UI.alignTop, externClass class ] <| UI.none
 
 
 displayDeviceList : Model -> UI.Element Msg
@@ -368,14 +359,15 @@ displayDeviceList model =
                 , case device.status of
                     NotConnected ->
                         UI.row []
-                        [
-                        UIInput.button [ UIRegion.description "Connect" ]
-                            { label = buttonCssIcon "icon-disconnected", onPress = Just <| ConnectToDevice index }
-                        , if index > 0 then
-                            UIInput.button [UI.alignRight, UIRegion.description "Remove", UIFont.heavy]
-                            {label = UI.text "-", onPress = Just <| RemoveDevice index }
-                            else UI.none
-                        ]
+                            [ UIInput.button [ UIRegion.description "Connect" ]
+                                { label = buttonCssIcon "icon-disconnected", onPress = Just <| ConnectToDevice index }
+                            , if index > 0 then
+                                UIInput.button [ UI.alignRight, UIRegion.description "Remove", UIFont.heavy ]
+                                    { label = UI.text "-", onPress = Just <| RemoveDevice index }
+
+                              else
+                                UI.none
+                            ]
 
                     Pending ->
                         UI.el [ UIRegion.description "waiting connection" ] <| buttonCssIcon "icon-loading"

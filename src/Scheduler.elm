@@ -1,4 +1,4 @@
-port module Scheduler exposing (main)
+port module Scheduler exposing (Model, Msg(..), initModel, subscriptions, update, view)
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -18,7 +18,12 @@ import Html.Attributes
 import Html.Events
 import Json.Decode as JD
 import Json.Encode as JE
+import List.Extra
+import Styles exposing (lightGrey, textField)
 import Task
+
+
+port executeInstructions : JE.Value -> Cmd msg
 
 
 main =
@@ -36,37 +41,38 @@ type SchedulerState
     | RunningInstructions
 
 
-type MilliSeconds
+type Time
     = MilliSeconds Int
 
 
+milliseconds : Time -> Int
+milliseconds (MilliSeconds n) =
+    n
+
+
+millisToString : Time -> String
+millisToString ms =
+    case ms of
+        MilliSeconds int ->
+            String.fromInt int
+
 
 type alias SchedulerInstruction =
-    { time : MilliSeconds, deviceInstructions : Dict String FlowIOCommand }
-
-
-type FlowIODevice
-    = FlowIODevice String
+    { time : Time, deviceInstructions : Dict String FlowIOCommand }
 
 
 type alias Model =
     { state : SchedulerState
     , instructions : Array SchedulerInstruction
-    , devices : List FlowIODevice
+    , devices : Array FlowIODevice
     }
-
-
-port flowIOsChange : (Array { id : Int, isConnected : Bool } -> msg) -> Sub msg
-
-
-port executeInstructions : JE.Value -> Cmd msg
 
 
 initModel : Model
 initModel =
     { state = Disabled
     , instructions = Array.fromList []
-    , devices = []
+    , devices = Array.empty
     }
 
 
@@ -114,154 +120,218 @@ header =
         ]
 
 
-millisToString : MilliSeconds -> String
-millisToString ms =
-    case ms of
-        MilliSeconds int ->
-            String.fromInt int
+getInstructionForDevice : SchedulerInstruction -> FlowIO.FlowIODevice -> Maybe FlowIOCommand
+getInstructionForDevice inst { details } =
+    case details of
+        Just found ->
+            Dict.get found.id inst.deviceInstructions
+
+        Nothing ->
+            Nothing
 
 
-getInstructionForDevice : SchedulerInstruction -> FlowIODevice -> Maybe FlowIOCommand
-getInstructionForDevice inst (FlowIODevice id) =
-    Dict.get id inst.deviceInstructions
+type SchedulerRow
+    = ExistingInstruction SchedulerInstruction
+    | PlannedInstruction
 
 
 devicesTable : Model -> El.Element Msg
 devicesTable model =
     let
+        instructions =
+            Array.map ExistingInstruction model.instructions
+                |> Array.push PlannedInstruction
+                |> Array.toList
+
+        maxTime =
+            instructions
+                |> List.map
+                    (\row ->
+                        case row of
+                            ExistingInstruction inst ->
+                                .time inst |> milliseconds
+
+                            _ ->
+                                0
+                    )
+                |> List.maximum
+                |> Maybe.map ((+) 10)
+                |> Maybe.withDefault 0
+
         border =
             [ Border.width 1
             , Border.color <| El.rgb255 0xDD 0xDD 0xDD
             ]
 
         cellHeight =
-            El.height <| El.px 32
+            El.height <| El.px 42
 
         commonAttrs =
             cellHeight :: border
 
-        timeColumn : El.IndexedColumn SchedulerInstruction Msg
+        cellWrapper content =
+            El.el (El.padding 2 :: commonAttrs) content
+
+        timeColumn : El.IndexedColumn SchedulerRow Msg
         timeColumn =
             { header = El.el ([] ++ border) <| El.text "Time (ms)"
-            , width = fillPortion 1
+            , width = El.maximum 120 (fillPortion 1)
             , view =
-                \index instruction ->
-                    El.el commonAttrs <|
-                        if model.state == Editable then
-                            Element.Input.text []
-                                { label = labelHidden ("Time at step " ++ String.fromInt index)
-                                , onChange = InstructionTimeChanged index
-                                , text = millisToString instruction.time
-                                , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
-                                }
+                \index row ->
+                    cellWrapper <|
+                        case row of
+                            ExistingInstruction instruction ->
+                                textField [ El.htmlAttribute <| Html.Attributes.type_ "number" ]
+                                    { onChange = InstructionTimeChanged index
+                                    , label = "Time at step " ++ String.fromInt index
+                                    , text = millisToString instruction.time
+                                    , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
+                                    , isDisabled = Debug.log "model.state" model.state /= Editable
+                                    , onChangeDisabled = DisabledFieldClicked "Time column disabled"
+                                    }
 
-                        else
-                            El.text <| millisToString instruction.time
+                            PlannedInstruction ->
+                                textField []
+                                    { onChange = InstructionTimeChanged index
+                                    , label = "Time at step " ++ String.fromInt index
+                                    , text = String.fromInt maxTime
+                                    , placeholder = Just <| Element.Input.placeholder [] <| El.text <| String.fromInt maxTime
+                                    , isDisabled = True
+                                    , onChangeDisabled = AddInstruction
+                                    }
             }
 
-        columnsForDevice : FlowIODevice -> List (El.IndexedColumn SchedulerInstruction Msg)
-        columnsForDevice ((FlowIODevice id) as device) =
-            [ { header = El.el border <| El.text ("Device " ++ id ++ " Action")
+        columnsForDevice : FlowIODevice -> List (El.IndexedColumn SchedulerRow Msg)
+        columnsForDevice device =
+            let
+                name =
+                    Maybe.map .name device.details |> Maybe.withDefault "Unknown"
+            in
+            [ { header = El.el border <| El.text (name ++ " Action")
               , width = El.maximum 140 <| fillPortion 1
               , view =
-                    \index instruction ->
-                        let
-                            devInstruction =
-                                getInstructionForDevice instruction device
-                        in
-                        El.el commonAttrs <|
-                            case devInstruction of
-                                Just inst ->
-                                    Element.Input.radio [ Font.size 11, El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap", cellHeight ]
-                                        { options =
-                                            [ Element.Input.option Inflate <| El.text "Inflate"
-                                            , Element.Input.option Vacuum <| El.text "Vacuum"
-                                            , Element.Input.option Release <| El.text "Release"
-                                            , Element.Input.option Stop <| El.text "Stop"
-                                            ]
-                                        , onChange = ActionChanged device index
-                                        , selected = Just inst.action
-                                        , label = labelHidden "Action"
-                                        }
+                    \index row ->
+                        cellWrapper <|
+                            case row of
+                                ExistingInstruction instruction ->
+                                    let
+                                        devInstruction =
+                                            getInstructionForDevice instruction device
+                                    in
+                                    case devInstruction of
+                                        Just inst ->
+                                            Element.Input.radio [ Font.size 11, El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap", cellHeight ]
+                                                { options =
+                                                    [ Element.Input.option Inflate <| El.text "Inflate"
+                                                    , Element.Input.option Vacuum <| El.text "Vacuum"
+                                                    , Element.Input.option Release <| El.text "Release"
+                                                    , Element.Input.option Stop <| El.text "Stop"
+                                                    ]
+                                                , onChange = ActionChanged device index
+                                                , selected = Just inst.action
+                                                , label = labelHidden "Action"
+                                                }
 
-                                Nothing ->
-                                    El.none
+                                        Nothing ->
+                                            El.none
+
+                                PlannedInstruction ->
+                                    El.el commonAttrs <| El.none
               }
-            , { header = El.el border <| El.text ("Device " ++ id ++ " PWM")
-              , width = fillPortion 1
+            , { header = El.el border <| El.text (name ++ " PWM")
+              , width = El.maximum 120 <| fillPortion 1
               , view =
-                    \index instruction ->
-                        let
-                            devInstruction =
-                                getInstructionForDevice instruction device
-                        in
-                        El.el commonAttrs <|
-                            case devInstruction of
-                                Just inst ->
-                                    El.html <|
-                                        Html.input
+                    \index row ->
+                        cellWrapper <|
+                            case row of
+                                ExistingInstruction instruction ->
+                                    let
+                                        devInstruction =
+                                            getInstructionForDevice instruction device
+
+                                        numberAttrs =
                                             [ Html.Attributes.min "100"
                                             , Html.Attributes.max "255"
-                                            , Html.Attributes.value <| String.fromInt inst.pumpPwm
                                             , Html.Attributes.step "5"
                                             , Html.Attributes.type_ "number"
-                                            , Html.Events.onInput (PWMChanged device index)
                                             ]
-                                            []
+                                                |> List.map El.htmlAttribute
+                                    in
+                                    case devInstruction of
+                                        Just inst ->
+                                            textField numberAttrs
+                                                { isDisabled = model.state /= Editable
+                                                , onChange = PWMChanged device index
+                                                , onChangeDisabled = DisabledFieldClicked ""
+                                                , label = "PWM " ++ name ++ " row " ++ String.fromInt index
+                                                , text = String.fromInt inst.pumpPwm
+                                                , placeholder = Nothing
+                                                }
 
-                                Nothing ->
+                                        Nothing ->
+                                            El.none
+
+                                PlannedInstruction ->
                                     El.none
               }
-            , { header = El.el border <| El.text ("Device " ++ id ++ " Ports")
+            , { header = El.el border <| El.text ("Device " ++ name ++ " Ports")
               , width = El.maximum 140 <| fillPortion 3
               , view =
-                    \index instruction ->
-                        let
-                            devInstruction =
-                                getInstructionForDevice instruction device
-                        in
-                        El.el commonAttrs <|
-                            case devInstruction of
-                                Just inst ->
-                                    El.row []
-                                        [ Element.Input.checkbox []
-                                            { label = labelAbove [ Font.size 8 ] <| El.text "Port 1"
-                                            , checked = inst.ports.port1 == Open
-                                            , icon = Element.Input.defaultCheckbox
-                                            , onChange = PortStateChanged device index Port1
-                                            }
-                                        , Element.Input.checkbox []
-                                            { label = labelAbove [ Font.size 8 ] <| El.text "Port 2"
-                                            , checked = inst.ports.port2 == Open
-                                            , icon = Element.Input.defaultCheckbox
-                                            , onChange = PortStateChanged device index Port2
-                                            }
-                                        , Element.Input.checkbox []
-                                            { label = labelAbove [ Font.size 8 ] <| El.text "Port 3"
-                                            , checked = inst.ports.port3 == Open
-                                            , icon = Element.Input.defaultCheckbox
-                                            , onChange = PortStateChanged device index Port3
-                                            }
-                                        , Element.Input.checkbox []
-                                            { label = labelAbove [ Font.size 8 ] <| El.text "Port 4"
-                                            , checked = inst.ports.port4 == Open
-                                            , icon = Element.Input.defaultCheckbox
-                                            , onChange = PortStateChanged device index Port4
-                                            }
-                                        , Element.Input.checkbox []
-                                            { label = labelAbove [ Font.size 8 ] <| El.text "Port 5"
-                                            , checked = inst.ports.port5 == Open
-                                            , icon = Element.Input.defaultCheckbox
-                                            , onChange = PortStateChanged device index Port5
-                                            }
-                                        ]
+                    \index row ->
+                        cellWrapper <|
+                            case row of
+                                ExistingInstruction instruction ->
+                                    let
+                                        devInstruction =
+                                            getInstructionForDevice instruction device
+                                    in
+                                    case devInstruction of
+                                        Just inst ->
+                                            El.row []
+                                                [ Element.Input.checkbox []
+                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 1"
+                                                    , checked = inst.ports.port1 == Open
+                                                    , icon = Element.Input.defaultCheckbox
+                                                    , onChange = PortStateChanged device index Port1
+                                                    }
+                                                , Element.Input.checkbox []
+                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 2"
+                                                    , checked = inst.ports.port2 == Open
+                                                    , icon = Element.Input.defaultCheckbox
+                                                    , onChange = PortStateChanged device index Port2
+                                                    }
+                                                , Element.Input.checkbox []
+                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 3"
+                                                    , checked = inst.ports.port3 == Open
+                                                    , icon = Element.Input.defaultCheckbox
+                                                    , onChange = PortStateChanged device index Port3
+                                                    }
+                                                , Element.Input.checkbox []
+                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 4"
+                                                    , checked = inst.ports.port4 == Open
+                                                    , icon = Element.Input.defaultCheckbox
+                                                    , onChange = PortStateChanged device index Port4
+                                                    }
+                                                , Element.Input.checkbox []
+                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 5"
+                                                    , checked = inst.ports.port5 == Open
+                                                    , icon = Element.Input.defaultCheckbox
+                                                    , onChange = PortStateChanged device index Port5
+                                                    }
+                                                ]
 
-                                Nothing ->
+                                        Nothing ->
+                                            El.none
+
+                                PlannedInstruction ->
                                     El.none
               }
             ]
     in
-    indexedTable [ fullWidth, Font.size 11, El.padding 2 ] { data = Array.toList model.instructions, columns = timeColumn :: List.concatMap columnsForDevice model.devices }
+    indexedTable [ fullWidth, Font.size 11, El.padding 2 ]
+        { data = instructions
+        , columns = timeColumn :: (List.concat <| AE.mapToList columnsForDevice model.devices)
+        }
 
 
 attrIfElse : Bool -> El.Attribute msg -> El.Attribute msg -> El.Attribute msg
@@ -298,7 +368,7 @@ type Msg
     = AddInstruction
     | DeleteLastInstruction
     | ResetInstructions
-    | DevicesChanged (Array { id : Int, isConnected : Bool })
+    | DevicesChanged (Array FlowIODevice)
     | InstructionTimeChanged Int String
     | ActionChanged FlowIODevice Int FlowIOAction
     | PWMChanged FlowIODevice Int String
@@ -308,9 +378,10 @@ type Msg
     | UploadInstructions
     | UploadSelected File.File
     | FileRead String
+    | DisabledFieldClicked String
 
 
-createNewInstruction : List FlowIODevice -> Array SchedulerInstruction -> SchedulerInstruction
+createNewInstruction : Array FlowIODevice -> Array SchedulerInstruction -> SchedulerInstruction
 createNewInstruction devices existingInstructions =
     let
         maxTime =
@@ -331,7 +402,10 @@ createNewInstruction devices existingInstructions =
             { port1 = Close, port2 = Close, port3 = Close, port4 = Close, port5 = Close }
     in
     { time = MilliSeconds (maxTime + 1)
-    , deviceInstructions = Dict.fromList <| List.map (\(FlowIODevice id) -> ( id, defaultDeviceInstruction )) devices
+    , deviceInstructions =
+        Dict.fromList <|
+            Array.toList <|
+                AE.filterMap (\device -> Maybe.map (\{ id } -> ( id, defaultDeviceInstruction )) device.details) devices
     }
 
 
@@ -344,9 +418,21 @@ update msg model =
             -> (FlowIOCommand -> FlowIOCommand)
             -> Array SchedulerInstruction
             -> Array SchedulerInstruction
-        updateDeviceInstruction index (FlowIODevice id) updater instructions =
+        updateDeviceInstruction index device updater instructions =
+            let
+                id =
+                    Maybe.map .id device.details
+
+                newInstructions inst =
+                    case id of
+                        Just id_ ->
+                            Dict.update id_ (Maybe.map updater) inst.deviceInstructions
+
+                        Nothing ->
+                            inst.deviceInstructions
+            in
             AE.update index
-                (\inst -> { inst | deviceInstructions = Dict.update id (Maybe.map updater) inst.deviceInstructions })
+                (\inst -> { inst | deviceInstructions = newInstructions inst })
                 instructions
 
         updatePort : Port -> Bool -> PortsState -> PortsState
@@ -378,7 +464,6 @@ update msg model =
                 _ ->
                     -- Warning we do not allow manipulation of inlet/outlet ports here
                     ports
-
     in
     case msg of
         AddInstruction ->
@@ -446,7 +531,20 @@ update msg model =
             )
 
         DevicesChanged devices ->
-            ( { model | devices = devices |> Array.map (.id >> String.fromInt >> FlowIODevice) |> Array.toList }, Cmd.none )
+            let
+                newState =
+                    case model.state of
+                        RunningInstructions ->
+                            RunningInstructions
+
+                        _ ->
+                            if Array.isEmpty devices then
+                                Disabled
+
+                            else
+                                Editable
+            in
+            ( { model | devices = devices, state = newState }, Cmd.none )
 
         RunInstructions ->
             ( { model | state = RunningInstructions }, executeInstructions (encodeInstructions model.instructions) )
@@ -478,6 +576,9 @@ update msg model =
                     Debug.log (JD.errorToString error)
                         ( model, Cmd.none )
 
+        DisabledFieldClicked _ ->
+            ( model, Cmd.none )
+
 
 encodeInstructions : Array SchedulerInstruction -> JE.Value
 encodeInstructions instructions =
@@ -502,5 +603,4 @@ instructionsDecoder =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ flowIOsChange DevicesChanged
-        ]
+        []

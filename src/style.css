@@ -3,15 +3,6 @@ enableControls() and disableControls() methods in main.JS.
 
 NOTE:In addition to adding this class, you must set the initial state to diabled, so that
 on page load the controls are disabled by default.*/
-.x0:disabled,
-.x1:disabled,
-.x2:disabled,
-.x3:disabled,
-.x4:disabled,
-.x5:disabled,
-.x6:disabled {
-    opacity: 0.4;
-}
 
 body {
     font-family: "Overpass", "Open Sans", Helvetica, sans-serif;
@@ -32,88 +23,6 @@ hr {
     fill: hsl(200, 90%, 90%);
 }
 
-/* #############################---Grid Structure---############################### */
-.grid-parent {
-    display: grid;
-    grid-template-columns: 60px 30px 380px 30px 380px 30px 350px;
-    grid-template-rows: 525px 30px 220px;
-    margin-left: 1em;
-}
-
-.grid-sidebar {
-    display: grid;
-    grid-template-rows: repeat(10, 1fr);
-    justify-self: center; /*centers itself relative to parent grid*/
-}
-
-.grid-leftColumn {
-    position: relative;
-    display: grid;
-    grid-template-columns:1fr 4fr 1fr 4fr;
-    grid-template-rows: 2fr 4fr 40px 30fr 6fr;
-    grid-template-areas:
-    "title title title title"
-    ". pwmvac . pwminf"
-    ". ctrls ctrls ctrls"
-    "config flowio flowio flowio"
-    ". . . .";
-}
-
-.grid-leftColumn > p {
-    position: relative;
-}
-
-.grid-centerColumn {
-    display: grid;
-    grid-template-columns:1fr 2fr;
-    grid-template-rows: 2fr 37fr 6fr;
-    grid-template-areas:
-    "title btns"
-    "tbl tbl "
-    "run run";
-}
-
-.scheduler-area {
-    grid-column: 5 / span 3;
-}
-
-.grid-rightColumn {
-    display: grid;
-    grid-row-start: 3;
-    grid-column: 3 / -1;
-    grid-template-rows: 2fr 37fr 6fr;
-}
-
-.center {
-    justify-self: center; /*centers itself relative to parent grid*/
-}
-
-/* #############################---Control---############################### */
-.bordered {
-    border-style: dotted;
-    border-width: 2px;
-    border-color: #a4aba6;
-}
-
-.marginRight {
-    margin-right: 19px;
-}
-
-.checkboxes {
-    text-align: center;
-    margin-top: 10px;
-}
-
-.checkboxes input {
-    margin-right: 8px;
-    margin-left: 8px;
-}
-
-.inmiddle {
-    text-align: center;
-}
-
-/*#############################---Schedule---############################### */
 .btn-scheduler {
     background-color: #008CBA;
     border: none;
@@ -140,50 +49,3 @@ hr {
     border-radius: 8px;
 }
 
-div.scheduledTask {
-    padding-bottom: 20px;
-}
-
-table {
-    font-family: arial, sans-serif;
-    border-collapse: collapse;
-/ / width: 100 %;
-}
-
-td, th {
-    border: 1px solid #dddddd;
-    text-align: center;
-    padding: 8px;
-}
-
-tr:nth-child(even) {
-    background-color: #edf7ed;
-}
-
-.starttime {
-    width: 50px;
-}
-
-.pwm {
-    width: 40px;
-}
-
-/* #############################---Log---############################### */
-.log {
-    height: 10em; /*sets the frame height*/
-    width: 90%;
-    margin-top: 7px;
-    background: #fff8f8;
-}
-
-.btn-log {
-    background-color: #008CBA;
-    border: none;
-    color: white;
-    text-align: center;
-    text-decoration: none;
-    display: inline-block;
-    font-size: 15px;
-    padding: 4px 12px;
-    border-radius: 18px;
-}
