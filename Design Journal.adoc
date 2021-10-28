@@ -1,0 +1,15 @@
+= Design Journal for SymbioSing UI
+
+== By date
+
+=== 2021-10-27
+
+Kelsey and I discussed how we should represent data. Kelsey thinks of the actuation in terms of goal stretch sensor
+values. It means that we will have to send to the FlowIO a list of pressure goals, and use PID controller scheme to
+determine how to activate the valves. PID was suggested by Dag Svaenes.
+
+=== 2021-10-28
+
+After discussing with Kelsey, I decided to change colour scheme to dark. We discussed how we should present the
+different buttons and multiple select, and Kelsey brought up that it would be used in a dark room so colours need to
+be chosen appropriately, as well as using shapes and color combinations.
