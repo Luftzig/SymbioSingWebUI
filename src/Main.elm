@@ -3,6 +3,7 @@ port module Main exposing (main)
 import Array exposing (Array)
 import Array.Extra
 import Browser
+import Color.Dracula as Dracula
 import Element as UI
 import Element.Background as UIBackground
 import Element.Border as UIBorder
@@ -15,7 +16,7 @@ import Json.Decode exposing (Value, decodeValue)
 import Json.Encode
 import List.Extra as LE
 import Scheduler
-import Styles exposing (bottomBorder, buttonCssIcon, darkGrey, grey, rightBorder, rust, white)
+import Styles exposing (bottomBorder, buttonCssIcon, darkGrey, grey, inflateButton, releaseButton, rightBorder, rust, stopButton, vacuumButton )
 import Task
 
 
@@ -30,7 +31,7 @@ type Msg
     = AddDevice
     | RemoveDevice Int
     | ConnectToDevice Int
-    | DeviceStatusChanged { deviceIndex : Int, status : String, details : Maybe DeviceDetails }
+    | DeviceStatusChanged { deviceIndex : Int, status : String, details : Maybe Value }
     | RequestControlServiceUpdates Int
     | DisconnectDevice Int
     | ControlServiceUpdate { deviceIndex : Int, status : Value }
@@ -58,7 +59,7 @@ port connectToDevice : Int -> Cmd msg
 port disconnectDevice : Int -> Cmd msg
 
 
-port deviceStatusChanged : ({ deviceIndex : Int, status : String, details : Maybe DeviceDetails } -> msg) -> Sub msg
+port deviceStatusChanged : ({ deviceIndex : Int, status : String, details : Maybe Value } -> msg) -> Sub msg
 
 
 port controlServiceStatusChanged : ({ deviceIndex : Int, status : Value } -> msg) -> Sub msg
@@ -122,9 +123,8 @@ update msg model =
                 scheduler =
                     model_.scheduler
 
-                (newScheduler, _) =
-                    Scheduler.update (Scheduler.DevicesChanged newDevices) scheduler
-
+                newScheduler =
+                    { scheduler | devices = newDevices }
             in
             { model_ | devices = newDevices, scheduler = newScheduler }
 
@@ -160,7 +160,13 @@ update msg model =
                 Just _ ->
                     case status of
                         "connected" ->
-                            ( updateDevices (updateDevice deviceIndex (setStatusTo Connected >> setDetailsTo details)) model
+                            let
+                                decodedDetails =
+                                    details
+                                        |> Maybe.map (Json.Decode.decodeValue deviceDetailsDecoder)
+                                        |> Maybe.andThen Result.toMaybe
+                            in
+                            ( updateDevices (updateDevice deviceIndex (setStatusTo Connected >> setDetailsTo decodedDetails)) model
                             , sendMessage (RequestControlServiceUpdates deviceIndex)
                             )
 
@@ -213,10 +219,9 @@ update msg model =
                     case device.status of
                         Connected ->
                             ( { model
-                                |  listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
+                                | listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
                               }
-                              |>
-                              updateDevices (updateDevice deviceIndex (setStatusTo NotConnected))
+                                |> updateDevices (updateDevice deviceIndex (setStatusTo NotConnected))
                             , disconnectDevice deviceIndex
                             )
 
@@ -253,7 +258,7 @@ update msg model =
                                 { newStatus | command = Maybe.withDefault defaultCommand <| Maybe.map .command device.controlServiceStatus }
                                 device
                     in
-                    (  model |> updateDevices (updateDevice deviceIndex updateControlStatus)
+                    ( model |> updateDevices (updateDevice deviceIndex updateControlStatus)
                     , Cmd.none
                     )
 
@@ -330,8 +335,10 @@ body model =
         [ UI.width <| UI.fill
         , UI.height <| UI.fill
         , UI.padding 20
+        , UIFont.color Dracula.white
         , UIFont.family [ UIFont.typeface "Overpass", UIFont.typeface "Open Sans", UIFont.typeface "Helvetica", UIFont.sansSerif ]
         , UIFont.size 15
+        , UIBackground.color Dracula.black
         ]
     <|
         UI.column [ UI.width <| UI.fill, UI.height <| UI.fill ]
@@ -348,7 +355,6 @@ body model =
             ]
 
 
-
 displayDeviceList : Model -> UI.Element Msg
 displayDeviceList model =
     let
@@ -360,7 +366,7 @@ displayDeviceList model =
                     NotConnected ->
                         UI.row []
                             [ UIInput.button [ UIRegion.description "Connect" ]
-                                { label = buttonCssIcon "icon-disconnected", onPress = Just <| ConnectToDevice index }
+                                { label = buttonCssIcon "icon-disconnected" "Disconnected", onPress = Just <| ConnectToDevice index }
                             , if index > 0 then
                                 UIInput.button [ UI.alignRight, UIRegion.description "Remove", UIFont.heavy ]
                                     { label = UI.text "-", onPress = Just <| RemoveDevice index }
@@ -370,14 +376,14 @@ displayDeviceList model =
                             ]
 
                     Pending ->
-                        UI.el [ UIRegion.description "waiting connection" ] <| buttonCssIcon "icon-loading"
+                        UI.el [ UIRegion.description "waiting connection" ] <| buttonCssIcon "icon-loading" "Awaiting connection"
 
                     Connected ->
                         UI.column []
                             [ UI.row [ UI.width UI.fill ]
                                 [ UI.text <| Maybe.withDefault "Unknown" <| Maybe.map .name device.details
                                 , UIInput.button [ UIRegion.description "Disconnect", UI.alignLeft ]
-                                    { label = buttonCssIcon "icon-connected", onPress = Just <| DisconnectDevice index }
+                                    { label = buttonCssIcon "icon-connected" "Connected", onPress = Just <| DisconnectDevice index }
                                 ]
                             , UI.paragraph [ UIFont.size 10, UI.width UI.fill ]
                                 [ UI.text "id: "
@@ -485,10 +491,10 @@ displayHardwareStatus { devices } =
         actions : (FlowIOAction -> Msg) -> FlowIOAction -> UI.Element Msg
         actions onUpdate currentValue =
             UI.row [ UI.spacing 5, UI.padding 5 ]
-                [ UIInput.button [] { label = buttonCssIcon "icon-inflate", onPress = Just <| onUpdate Inflate }
-                , UIInput.button [] { label = buttonCssIcon "icon-vacuum", onPress = Just <| onUpdate Vacuum }
-                , UIInput.button [] { label = buttonCssIcon "icon-release", onPress = Just <| onUpdate Release }
-                , UIInput.button [] { label = buttonCssIcon "icon-stop", onPress = Just <| onUpdate Stop }
+                [ inflateButton (Just <| onUpdate Inflate)
+                , vacuumButton (Just <| onUpdate Vacuum)
+                , releaseButton (Just <| onUpdate Release)
+                , stopButton (Just <| onUpdate Stop)
                 ]
 
         displayPorts : (Port -> PortState -> Msg) -> PortsState -> UI.Element Msg
@@ -525,12 +531,12 @@ displayHardwareStatus { devices } =
                                 rust
 
                              else
-                                white
+                                Dracula.white
                             )
                         , UIFont.size 10
                         , UIFont.color
                             (if status then
-                                white
+                                Dracula.white
 
                              else
                                 darkGrey
@@ -596,7 +602,7 @@ displayHardwareStatus { devices } =
 
 header : UI.Element Msg
 header =
-    UI.el ([ UI.centerX, UI.alignTop ] ++ [ UIFont.size 24 ]) <| UI.text "FlowIO Scheduler"
+    UI.el [ UI.centerX, UI.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <| UI.text "FlowIO Scheduler"
 
 
 footer : UI.Element Msg

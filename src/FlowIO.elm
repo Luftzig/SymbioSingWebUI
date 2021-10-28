@@ -16,8 +16,12 @@ type alias FlowIODevice =
     }
 
 
+type alias DeviceId =
+    String
+
+
 type alias DeviceDetails =
-    { name : String, id : String, services : List String }
+    { name : String, id : DeviceId, services : List FlowIOService }
 
 
 type FlowIOStatus
@@ -29,6 +33,33 @@ type FlowIOStatus
 type FlowIOService
     = ControlService
     | ConfigService
+    | UnknownService String
+
+
+serviceToString : FlowIOService -> String
+serviceToString service =
+    case service of
+        ControlService ->
+            "control-service"
+
+        ConfigService ->
+            "config-service"
+
+        UnknownService details ->
+            "unknown-service:" ++ details
+
+
+serviceFromString : String -> FlowIOService
+serviceFromString string =
+    case string of
+        "control-service" ->
+            ControlService
+
+        "config-service" ->
+            ConfigService
+
+        other ->
+            UnknownService other
 
 
 type alias ControlServiceStatus =
@@ -195,6 +226,13 @@ type alias FlowIOCommand =
 
 
 -- Decoders
+
+deviceDetailsDecoder : JD.Decoder DeviceDetails
+deviceDetailsDecoder =
+    JD.map3 (DeviceDetails)
+        (JD.field "name" JD.string)
+        (JD.field "id" JD.string)
+        (JD.field "services" <| JD.list (JD.string |> JD.map serviceFromString))
 
 
 controlServiceStatusDecoder : JD.Decoder ControlServiceStatus

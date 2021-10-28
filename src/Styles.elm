@@ -1,11 +1,13 @@
 module Styles exposing (..)
 
+import Color.Dracula as Dracula
 import Element exposing (Attribute, Color, Element, alignTop, el, fill, height, htmlAttribute, none, px, rgb, rgb255, rgba, spacing, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events
 import Element.Font as Font
 import Element.Input as Input
+import Element.Region as Region
 import Html.Attributes
 import Maybe.Extra
 
@@ -29,16 +31,6 @@ darkGrey =
     rgb 0.2 0.2 0.2
 
 
-transparent : Color
-transparent =
-    rgba 0 0 0 0
-
-
-white : Color
-white =
-    rgb 1 1 1
-
-
 bottomBorder =
     Border.widthEach { bottom = 2, left = 0, right = 0, top = 0 }
 
@@ -52,9 +44,18 @@ externClass class =
     htmlAttribute <| Html.Attributes.class class
 
 
-buttonCssIcon : String -> Element msg
-buttonCssIcon class =
-    el [ height <| px 32, width <| px 32, alignTop, externClass class ] <| none
+buttonCssIcon : String -> String -> Element msg
+buttonCssIcon class description =
+    el
+        [ height <| px 32
+        , width <| px 32
+        , alignTop
+        , externClass class
+        , htmlAttribute <| Html.Attributes.title description
+        , Region.description description
+        ]
+    <|
+        none
 
 
 textField :
@@ -72,12 +73,14 @@ textField attrs { isDisabled, label, text, onChange, placeholder, onChangeDisabl
     if isDisabled then
         Input.text
             (attrs
-                ++ [ Background.color lightGrey
+                ++ [ Background.color darkGrey
                    , Border.width 1
-                   , Border.color grey
-                   , width <| fill
-                   , Font.color grey
-                   , height <| fill
+                   , Border.color lightGrey
+
+                   --, width <| fill
+                   , Font.color lightGrey
+
+                   --, height <| fill
                    ]
             )
             { label = Input.labelHidden label
@@ -87,9 +90,45 @@ textField attrs { isDisabled, label, text, onChange, placeholder, onChangeDisabl
             }
 
     else
-        Input.text attrs
+        Input.text (attrs ++ [ Background.color Dracula.black ])
             { label = Input.labelHidden label
             , onChange = onChange
             , text = text
             , placeholder = placeholder
             }
+
+
+inflateIcon =
+    buttonCssIcon "icon-inflate" "Inflate"
+
+
+inflateButton : Maybe msg -> Element msg
+inflateButton action =
+    Input.button [ Region.description "Inflate" ] { label = inflateIcon, onPress = action }
+
+
+vacuumIcon =
+    buttonCssIcon "icon-vacuum" "Vacuum"
+
+
+vacuumButton : Maybe msg -> Element msg
+vacuumButton action =
+    Input.button [ Region.description "Vacuum" ] { label = vacuumIcon, onPress = action }
+
+
+releaseIcon =
+    buttonCssIcon "icon-release" "Release"
+
+
+releaseButton : Maybe msg -> Element msg
+releaseButton action =
+    Input.button [ Region.description "Release" ] { label = releaseIcon, onPress = action }
+
+
+stopIcon =
+    buttonCssIcon "icon-stop" "Stop"
+
+
+stopButton : Maybe msg -> Element msg
+stopButton action =
+    Input.button [ Region.description "Stop" ] { label = stopIcon, onPress = action }

@@ -1,0 +1,120 @@
+{
+  "version": "string",
+  "roleMapping": {
+    "role1": "device-id1",
+    "role2": "device-id2",
+    "roleN": "device-idN"
+  },
+  "instructions": {
+    "time": [
+      "number",
+      "number",
+      "number"
+    ],
+    "role1": [
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      },
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      },
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      }
+    ],
+    "role2": [
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      },
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      },
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      }
+    ],
+    "roleN": [
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      },
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      },
+      {
+        "action": "inflate|vacuum|release|stop",
+        "pwmVal": "number",
+        "ports": {
+          "port1": "boolean",
+          "port2": "boolean",
+          "port3": "boolean",
+          "port4": "boolean",
+          "port5": "boolean"
+        }
+      }
+    ]
+  }
+}

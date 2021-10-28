@@ -1,16 +1,16 @@
 /*SVG to CSS URL Converter:  https://yoksel.github.io/url-encoder/ */
 /*Bootstrap icons: https://icons.getbootstrap.com/? */
 
-.button{
-	height:32px;
-	width:32px;
-	border:none;
-	vertical-align: top;
-	background: white;
-}
-.border{
-	border: 1px solid green;
-}
+/*.button{*/
+/*	height:32px;*/
+/*	width:32px;*/
+/*	border:none;*/
+/*	vertical-align: top;*/
+/*	background: white;*/
+/*}*/
+/*.border{*/
+/*	border: 1px solid green;*/
+/*}*/
 
 /*#######################--- Connection Icons ---##############################*/
 .icon-disconnected {

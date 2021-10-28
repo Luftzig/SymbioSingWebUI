@@ -6,18 +6,18 @@ on page load the controls are disabled by default.*/
 
 body {
     font-family: "Overpass", "Open Sans", Helvetica, sans-serif;
-    line-height: 1.5em;
+    color: rgb(248 248 242);
 }
 
 hr {
     opacity: 0.4;
 }
 
-.flowiographic {
-    visibility: visible;
-    opacity: 0.4;
-    /*No height or width is specified, so that it can fill the width of the container (grid-cell) in which we will place it*/
-}
+/*.flowiographic {*/
+/*    visibility: visible;*/
+/*    opacity: 0.4;*/
+/*    !*No height or width is specified, so that it can fill the width of the container (grid-cell) in which we will place it*!*/
+/*}*/
 
 .svg_air {
     fill: hsl(200, 90%, 90%);
@@ -49,3 +49,4 @@ hr {
     border-radius: 8px;
 }
 
+.svg-red {}

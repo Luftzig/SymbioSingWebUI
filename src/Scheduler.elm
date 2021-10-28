@@ -3,7 +3,9 @@ port module Scheduler exposing (Model, Msg(..), initModel, subscriptions, update
 import Array exposing (Array)
 import Array.Extra as AE
 import Browser
+import Color.Dracula as Dracula
 import Dict exposing (Dict)
+import Dict.Extra
 import Element as El exposing (fillPortion, htmlAttribute, indexedTable)
 import Element.Background as Background
 import Element.Border as Border
@@ -19,7 +21,7 @@ import Html.Events
 import Json.Decode as JD
 import Json.Encode as JE
 import List.Extra
-import Styles exposing (lightGrey, textField)
+import Styles exposing (darkGrey, inflateIcon, lightGrey, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 
 
@@ -57,22 +59,42 @@ millisToString ms =
             String.fromInt int
 
 
-type alias SchedulerInstruction =
-    { time : Time, deviceInstructions : Dict String FlowIOCommand }
+type alias RoleName =
+    String
+
+
+type alias RolesInstructions =
+    Dict RoleName (Array FlowIOCommand)
+
+
+type alias Instructions =
+    { time : Array Time
+    , instructions : RolesInstructions
+    }
 
 
 type alias Model =
     { state : SchedulerState
-    , instructions : Array SchedulerInstruction
+    , instructions : Instructions
     , devices : Array FlowIODevice
+
+    -- roles are abstract names for devices
+    , roles : Array RoleName
+    , roleDeviceMapping : Dict RoleName String
     }
+
+
+emptyInstructions =
+    { time = Array.empty, instructions = Dict.empty }
 
 
 initModel : Model
 initModel =
-    { state = Disabled
-    , instructions = Array.fromList []
+    { state = Editable
+    , instructions = emptyInstructions
     , devices = Array.empty
+    , roles = Array.empty
+    , roleDeviceMapping = Dict.empty
     }
 
 
@@ -90,6 +112,7 @@ view model =
     El.layout
         [ Font.family [ Font.typeface "Overpass", Font.typeface "Open Sans", Font.typeface "Helvetica", Font.sansSerif ]
         , Font.size 15
+        , Font.color Dracula.white
         ]
         (El.column [ fullWidth, El.height <| El.fill ]
             [ header
@@ -97,10 +120,6 @@ view model =
             , buttons model
             ]
         )
-
-
-white =
-    El.rgb 1.0 1.0 1.0
 
 
 buttonPadding =
@@ -111,45 +130,253 @@ header : El.Element Msg
 header =
     El.row [ fullWidth, El.spacingXY 20 8 ]
         [ El.el [ El.width <| El.fillPortion 3, El.spaceEvenly, Font.bold, Font.size 18 ] <| El.text "Schedule"
-        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color white, buttonPadding ]
+        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
+            { onPress = Just (AddRole "Role 1"), label = El.text "+ Add Role" }
+        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
             { onPress = Just AddInstruction, label = El.text "+ Add Row" }
-        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color white, buttonPadding ]
+        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
             { onPress = Just DeleteLastInstruction, label = El.text "Delete" }
-        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color white, buttonPadding ]
+        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
             { onPress = Just ResetInstructions, label = El.text "Reset" }
         ]
 
 
-getInstructionForDevice : SchedulerInstruction -> FlowIO.FlowIODevice -> Maybe FlowIOCommand
-getInstructionForDevice inst { details } =
-    case details of
-        Just found ->
-            Dict.get found.id inst.deviceInstructions
+getCommandForRole : RoleName -> Int -> RolesInstructions -> Maybe FlowIOCommand
+getCommandForRole role index instructions =
+    instructions
+        |> Dict.get role
+        |> Maybe.andThen (Array.get index)
 
-        Nothing ->
-            Nothing
+
+cellHeight =
+    El.height <| El.px 42
+
+
+actionSelection : FlowIOCommand -> (FlowIOAction -> msg) -> El.Element msg
+actionSelection command onChange =
+    let
+        renderOption : El.Element msg -> Element.Input.OptionState -> El.Element msg
+        renderOption icon state =
+            case state of
+                Element.Input.Idle ->
+                    El.el [ Background.color Dracula.red, Border.rounded 2, Border.width 1, Border.color Dracula.purple ] icon
+
+                Element.Input.Focused ->
+                    El.el
+                        [ Background.color Dracula.red
+                        , Border.rounded 2
+                        , Border.width 2
+                        , Border.color Dracula.pink
+                        ]
+                        icon
+
+                Element.Input.Selected ->
+                    El.el
+                        [ Background.color Dracula.black
+                        , Border.rounded 2
+                        , Border.width 0
+                        , externalClass "svg-red"
+                        , El.behindContent <|
+                            El.el [ El.width El.fill, El.height El.fill, Background.color Dracula.green, Border.rounded 15 ] El.none
+                        ]
+                        icon
+    in
+    Element.Input.radioRow
+        [ Font.size 11
+        , El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap"
+        , cellHeight
+        , El.width <| El.px 224
+        ]
+        { options =
+            [ Element.Input.optionWith Inflate <| renderOption inflateIcon
+            , Element.Input.optionWith Vacuum <| renderOption vacuumIcon
+            , Element.Input.optionWith Release <| renderOption releaseIcon
+            , Element.Input.optionWith Stop <| renderOption stopIcon
+            ]
+        , onChange = onChange
+        , selected = Just command.action
+        , label = labelHidden "Action"
+        }
+
+
+pwmControl : FlowIOCommand -> Bool -> String -> (String -> Msg) -> El.Element Msg
+pwmControl inst isDisabled label onChange =
+    let
+        numberAttrs =
+            [ Html.Attributes.min "100"
+            , Html.Attributes.max "255"
+            , Html.Attributes.step "5"
+            , Html.Attributes.type_ "number"
+            ]
+                |> List.map El.htmlAttribute
+    in
+    textField (numberAttrs ++ [ El.width <| El.maximum 60 (fillPortion 1), cellHeight ])
+        { isDisabled = isDisabled
+        , onChange = onChange
+        , onChangeDisabled = DisabledFieldClicked ""
+        , label = label
+        , text = String.fromInt inst.pumpPwm
+        , placeholder = Nothing
+        }
+
+
+portsSelection : FlowIOCommand -> (Port -> Bool -> msg) -> El.Element msg
+portsSelection inst onPortChange =
+    let
+        checkBox checked =
+            if checked then
+                El.el
+                    [ El.height <| El.px 16
+                    , El.width <| El.px 16
+                    , Border.color Dracula.white
+                    , Background.color Dracula.gray
+                    , Border.rounded 4
+                    , El.behindContent <|
+                        El.el
+                            [ El.height <| El.px 14
+                            , El.width <| El.px 14
+                            , El.centerX
+                            , El.centerY
+                            , Border.rounded 7
+                            , Border.color Dracula.yellow
+                            , Background.color Dracula.green
+                            ]
+                            El.none
+                    ]
+                    El.none
+
+            else
+                El.el
+                    [ El.height <| El.px 16
+                    , El.width <| El.px 16
+                    , Border.color Dracula.white
+                    , Background.color Dracula.gray
+                    , Border.rounded 4
+                    ]
+                    El.none
+    in
+    El.row [ El.padding 2, El.spacing 2 ]
+        [ Element.Input.checkbox []
+            { label = labelAbove [ Font.size 8 ] <| El.text "Port 1"
+            , checked = inst.ports.port1 == Open
+            , icon = checkBox
+            , onChange = onPortChange Port1
+            }
+        , Element.Input.checkbox []
+            { label = labelAbove [ Font.size 8 ] <| El.text "Port 2"
+            , checked = inst.ports.port2 == Open
+            , icon = checkBox
+            , onChange = onPortChange Port2
+            }
+        , Element.Input.checkbox []
+            { label = labelAbove [ Font.size 8 ] <| El.text "Port 3"
+            , checked = inst.ports.port3 == Open
+            , icon = checkBox
+            , onChange = onPortChange Port3
+            }
+        , Element.Input.checkbox []
+            { label = labelAbove [ Font.size 8 ] <| El.text "Port 4"
+            , checked = inst.ports.port4 == Open
+            , icon = checkBox
+            , onChange = onPortChange Port4
+            }
+        , Element.Input.checkbox []
+            { label = labelAbove [ Font.size 8 ] <| El.text "Port 5"
+            , checked = inst.ports.port5 == Open
+            , icon = checkBox
+            , onChange = onPortChange Port5
+            }
+        ]
+
+
+schedulerControls : RoleName -> SchedulerState -> Int -> FlowIOCommand -> El.Element Msg
+schedulerControls role state rowIndex command =
+    El.row (commonAttrs ++ [])
+        [ actionSelection command (ActionChanged role rowIndex)
+        , pwmControl command
+            (state /= Editable)
+            ("PWM " ++ role ++ " row " ++ String.fromInt rowIndex)
+            (PWMChanged role rowIndex)
+        , portsSelection command (PortStateChanged role rowIndex)
+        ]
+
+
+border =
+    [ Border.width 1
+    , Border.color <| El.rgb255 0xDD 0xDD 0xDD
+    ]
+
+
+commonAttrs =
+    cellHeight :: border
+
+
+cellWrapper content =
+    El.el (El.padding 2 :: commonAttrs) content
+
+
+schedulerRow : RoleName -> SchedulerState -> Int -> SchedulerRow -> El.Element Msg
+schedulerRow role state index row =
+    case row of
+        ExistingInstruction _ dict ->
+            let
+                maybeCommand =
+                    Dict.get role dict
+            in
+            case maybeCommand of
+                Just command ->
+                    schedulerControls role state index command
+
+                Nothing ->
+                    El.row commonAttrs [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []", El.text "no cmd" ]
+
+        PlannedInstruction ->
+            El.row commonAttrs [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []" ]
 
 
 type SchedulerRow
-    = ExistingInstruction SchedulerInstruction
+    = ExistingInstruction Time (Dict RoleName FlowIOCommand)
     | PlannedInstruction
 
 
 devicesTable : Model -> El.Element Msg
 devicesTable model =
     let
-        instructions =
-            Array.map ExistingInstruction model.instructions
+        instructionsAt : Int -> RolesInstructions -> Dict RoleName FlowIOCommand
+        instructionsAt index rolesInstructions =
+            let
+                last : Array a -> Maybe a
+                last array =
+                    Array.get (Array.length array - 1) array
+            in
+            Debug.log ("instructions at " ++ Debug.toString index)
+                (rolesInstructions
+                    |> Dict.map
+                        (\_ commands ->
+                            Array.get index commands
+                                |> Maybe.withDefault defaultCommand
+                        )
+                )
+
+        rows : List SchedulerRow
+        rows =
+            model.instructions.time
+                |> Array.indexedMap
+                    (\index time ->
+                        ExistingInstruction
+                            time
+                            (instructionsAt index model.instructions.instructions)
+                    )
                 |> Array.push PlannedInstruction
                 |> Array.toList
 
         maxTime =
-            instructions
+            rows
                 |> List.map
                     (\row ->
                         case row of
-                            ExistingInstruction inst ->
-                                .time inst |> milliseconds
+                            ExistingInstruction time _ ->
+                                milliseconds time
 
                             _ ->
                                 0
@@ -157,20 +384,6 @@ devicesTable model =
                 |> List.maximum
                 |> Maybe.map ((+) 10)
                 |> Maybe.withDefault 0
-
-        border =
-            [ Border.width 1
-            , Border.color <| El.rgb255 0xDD 0xDD 0xDD
-            ]
-
-        cellHeight =
-            El.height <| El.px 42
-
-        commonAttrs =
-            cellHeight :: border
-
-        cellWrapper content =
-            El.el (El.padding 2 :: commonAttrs) content
 
         timeColumn : El.IndexedColumn SchedulerRow Msg
         timeColumn =
@@ -180,11 +393,11 @@ devicesTable model =
                 \index row ->
                     cellWrapper <|
                         case row of
-                            ExistingInstruction instruction ->
+                            ExistingInstruction time _ ->
                                 textField [ El.htmlAttribute <| Html.Attributes.type_ "number" ]
                                     { onChange = InstructionTimeChanged index
                                     , label = "Time at step " ++ String.fromInt index
-                                    , text = millisToString instruction.time
+                                    , text = millisToString time
                                     , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
                                     , isDisabled = Debug.log "model.state" model.state /= Editable
                                     , onChangeDisabled = DisabledFieldClicked "Time column disabled"
@@ -201,136 +414,27 @@ devicesTable model =
                                     }
             }
 
-        columnsForDevice : FlowIODevice -> List (El.IndexedColumn SchedulerRow Msg)
-        columnsForDevice device =
+        roleHeader : RoleName -> El.Element Msg
+        roleHeader roleName =
             let
-                name =
-                    Maybe.map .name device.details |> Maybe.withDefault "Unknown"
+                device =
+                    Dict.get roleName model.roleDeviceMapping
             in
-            [ { header = El.el border <| El.text (name ++ " Action")
-              , width = El.maximum 140 <| fillPortion 1
-              , view =
-                    \index row ->
-                        cellWrapper <|
-                            case row of
-                                ExistingInstruction instruction ->
-                                    let
-                                        devInstruction =
-                                            getInstructionForDevice instruction device
-                                    in
-                                    case devInstruction of
-                                        Just inst ->
-                                            Element.Input.radio [ Font.size 11, El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap", cellHeight ]
-                                                { options =
-                                                    [ Element.Input.option Inflate <| El.text "Inflate"
-                                                    , Element.Input.option Vacuum <| El.text "Vacuum"
-                                                    , Element.Input.option Release <| El.text "Release"
-                                                    , Element.Input.option Stop <| El.text "Stop"
-                                                    ]
-                                                , onChange = ActionChanged device index
-                                                , selected = Just inst.action
-                                                , label = labelHidden "Action"
-                                                }
+            El.column (border ++ [ El.width El.fill ])
+                [ El.el [ El.width El.fill ] <| El.text roleName
+                , El.el [ El.width El.fill, Font.size 12 ] <| El.text (Maybe.withDefault "" device)
+                ]
 
-                                        Nothing ->
-                                            El.none
-
-                                PlannedInstruction ->
-                                    El.el commonAttrs <| El.none
-              }
-            , { header = El.el border <| El.text (name ++ " PWM")
-              , width = El.maximum 120 <| fillPortion 1
-              , view =
-                    \index row ->
-                        cellWrapper <|
-                            case row of
-                                ExistingInstruction instruction ->
-                                    let
-                                        devInstruction =
-                                            getInstructionForDevice instruction device
-
-                                        numberAttrs =
-                                            [ Html.Attributes.min "100"
-                                            , Html.Attributes.max "255"
-                                            , Html.Attributes.step "5"
-                                            , Html.Attributes.type_ "number"
-                                            ]
-                                                |> List.map El.htmlAttribute
-                                    in
-                                    case devInstruction of
-                                        Just inst ->
-                                            textField numberAttrs
-                                                { isDisabled = model.state /= Editable
-                                                , onChange = PWMChanged device index
-                                                , onChangeDisabled = DisabledFieldClicked ""
-                                                , label = "PWM " ++ name ++ " row " ++ String.fromInt index
-                                                , text = String.fromInt inst.pumpPwm
-                                                , placeholder = Nothing
-                                                }
-
-                                        Nothing ->
-                                            El.none
-
-                                PlannedInstruction ->
-                                    El.none
-              }
-            , { header = El.el border <| El.text ("Device " ++ name ++ " Ports")
-              , width = El.maximum 140 <| fillPortion 3
-              , view =
-                    \index row ->
-                        cellWrapper <|
-                            case row of
-                                ExistingInstruction instruction ->
-                                    let
-                                        devInstruction =
-                                            getInstructionForDevice instruction device
-                                    in
-                                    case devInstruction of
-                                        Just inst ->
-                                            El.row []
-                                                [ Element.Input.checkbox []
-                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 1"
-                                                    , checked = inst.ports.port1 == Open
-                                                    , icon = Element.Input.defaultCheckbox
-                                                    , onChange = PortStateChanged device index Port1
-                                                    }
-                                                , Element.Input.checkbox []
-                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 2"
-                                                    , checked = inst.ports.port2 == Open
-                                                    , icon = Element.Input.defaultCheckbox
-                                                    , onChange = PortStateChanged device index Port2
-                                                    }
-                                                , Element.Input.checkbox []
-                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 3"
-                                                    , checked = inst.ports.port3 == Open
-                                                    , icon = Element.Input.defaultCheckbox
-                                                    , onChange = PortStateChanged device index Port3
-                                                    }
-                                                , Element.Input.checkbox []
-                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 4"
-                                                    , checked = inst.ports.port4 == Open
-                                                    , icon = Element.Input.defaultCheckbox
-                                                    , onChange = PortStateChanged device index Port4
-                                                    }
-                                                , Element.Input.checkbox []
-                                                    { label = labelAbove [ Font.size 8 ] <| El.text "Port 5"
-                                                    , checked = inst.ports.port5 == Open
-                                                    , icon = Element.Input.defaultCheckbox
-                                                    , onChange = PortStateChanged device index Port5
-                                                    }
-                                                ]
-
-                                        Nothing ->
-                                            El.none
-
-                                PlannedInstruction ->
-                                    El.none
-              }
-            ]
+        roleColumn : RoleName -> El.IndexedColumn SchedulerRow Msg
+        roleColumn roleName =
+            { header = roleHeader roleName
+            , width = El.maximum 300 <| fillPortion 2
+            , view = schedulerRow roleName model.state
+            }
     in
     indexedTable [ fullWidth, Font.size 11, El.padding 2 ]
-        { data = instructions
-        , columns = timeColumn :: (List.concat <| AE.mapToList columnsForDevice model.devices)
+        { data = rows
+        , columns = timeColumn :: AE.mapToList roleColumn model.roles
         }
 
 
@@ -344,7 +448,7 @@ attrIfElse condition ifTrue ifFalse =
 
 
 buttons model =
-    El.row [ Font.color white, El.centerX, El.spacingXY 8 20 ]
+    El.row [ Font.color Dracula.white, El.centerX, El.spacingXY 8 20 ]
         [ Element.Input.button
             [ externalClass "btn-scheduler"
             , buttonPadding
@@ -368,72 +472,90 @@ type Msg
     = AddInstruction
     | DeleteLastInstruction
     | ResetInstructions
-    | DevicesChanged (Array FlowIODevice)
     | InstructionTimeChanged Int String
-    | ActionChanged FlowIODevice Int FlowIOAction
-    | PWMChanged FlowIODevice Int String
-    | PortStateChanged FlowIODevice Int Port Bool
+    | ActionChanged RoleName Int FlowIOAction
+    | PWMChanged RoleName Int String
+    | PortStateChanged RoleName Int Port Bool
     | RunInstructions
     | DownloadInstructions
     | UploadInstructions
     | UploadSelected File.File
     | FileRead String
     | DisabledFieldClicked String
+    | AddRole String
+    | RemoveRole Int
+    | ReorderRole Int Int
+    | RenameRole Int String
+    | AssociateRoleToDevice RoleName (Maybe String)
 
 
-createNewInstruction : Array FlowIODevice -> Array SchedulerInstruction -> SchedulerInstruction
-createNewInstruction devices existingInstructions =
+createNewInstruction : Array RoleName -> Instructions -> Instructions
+createNewInstruction roles { time, instructions } =
     let
         maxTime =
-            existingInstructions
-                |> Array.map (.time >> (\(MilliSeconds t) -> t))
+            time
+                |> Array.map milliseconds
                 |> Array.toList
                 |> List.maximum
                 |> Maybe.withDefault -1
 
-        defaultDeviceInstruction : FlowIOCommand
-        defaultDeviceInstruction =
-            { action = Stop
-            , pumpPwm = 255
-            , ports = allPortsClosed
+        commandStop : FlowIOCommand
+        commandStop =
+            { defaultCommand
+                | action = Stop
+                , pumpPwm = 255
             }
-
-        allPortsClosed =
-            { port1 = Close, port2 = Close, port3 = Close, port4 = Close, port5 = Close }
     in
-    { time = MilliSeconds (maxTime + 1)
-    , deviceInstructions =
-        Dict.fromList <|
-            Array.toList <|
-                AE.filterMap (\device -> Maybe.map (\{ id } -> ( id, defaultDeviceInstruction )) device.details) devices
+    { time = Array.push (MilliSeconds (maxTime + 1)) time
+    , instructions =
+        instructions
+            |> Dict.map
+                (\_ commands ->
+                    Array.push commandStop commands
+                )
     }
+
+
+arrayMove : Int -> Int -> Array a -> Array a
+arrayMove origin target arr =
+    let
+        item =
+            Array.get origin arr
+
+        withoutItem =
+            AE.removeAt origin arr
+    in
+    item
+        |> Maybe.map (\item_ -> AE.insertAt target item_ withoutItem)
+        |> Maybe.withDefault arr
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        updateDeviceInstruction :
+        updateInstructionForRole :
             Int
-            -> FlowIODevice
+            -> RoleName
             -> (FlowIOCommand -> FlowIOCommand)
-            -> Array SchedulerInstruction
-            -> Array SchedulerInstruction
-        updateDeviceInstruction index device updater instructions =
+            -> Instructions
+            -> Instructions
+        updateInstructionForRole index role updater instructions =
             let
-                id =
-                    Maybe.map .id device.details
-
-                newInstructions inst =
-                    case id of
-                        Just id_ ->
-                            Dict.update id_ (Maybe.map updater) inst.deviceInstructions
-
-                        Nothing ->
-                            inst.deviceInstructions
+                updateCommands : Maybe (Array FlowIOCommand) -> Maybe (Array FlowIOCommand)
+                updateCommands =
+                    Maybe.map (\commands -> AE.update index updater commands)
             in
-            AE.update index
-                (\inst -> { inst | deviceInstructions = newInstructions inst })
-                instructions
+            { time = instructions.time
+            , instructions =
+                instructions.instructions
+                    |> Dict.update role updateCommands
+            }
+
+        deleteLastInstruction : Instructions -> Instructions
+        deleteLastInstruction { time, instructions } =
+            { time = AE.pop time
+            , instructions = Dict.map (\_ commands -> AE.pop commands) instructions
+            }
 
         updatePort : Port -> Bool -> PortsState -> PortsState
         updatePort p checked ports =
@@ -467,40 +589,38 @@ update msg model =
     in
     case msg of
         AddInstruction ->
-            ( { model
-                | instructions =
-                    Array.push (createNewInstruction model.devices model.instructions) <| model.instructions
-              }
+            ( { model | instructions = createNewInstruction model.roles model.instructions }
             , Cmd.none
             )
 
         DeleteLastInstruction ->
-            ( { model | instructions = Array.slice 0 -1 model.instructions }
+            ( { model | instructions = deleteLastInstruction model.instructions }
             , Cmd.none
             )
 
         ResetInstructions ->
-            ( { model | instructions = Array.empty }, Cmd.none )
+            ( { model | instructions = emptyInstructions }, Cmd.none )
 
         InstructionTimeChanged instructionIndex newValue ->
             case String.toInt newValue of
                 Just newTime ->
                     ( { model
                         | instructions =
-                            AE.update instructionIndex
-                                (\instruction -> { instruction | time = MilliSeconds newTime })
-                                model.instructions
+                            { time =
+                                AE.update instructionIndex (\_ -> MilliSeconds newTime) model.instructions.time
+                            , instructions = model.instructions.instructions
+                            }
                       }
                     , Cmd.none
                     )
 
-                Nothing ->
+                _ ->
                     ( model, Cmd.none )
 
         ActionChanged flowIODevice index flowIOAction ->
             ( { model
                 | instructions =
-                    updateDeviceInstruction index flowIODevice (\inst -> { inst | action = flowIOAction }) model.instructions
+                    updateInstructionForRole index flowIODevice (\inst -> { inst | action = flowIOAction }) model.instructions
               }
             , Cmd.none
             )
@@ -510,7 +630,12 @@ update msg model =
             case String.toInt newValue of
                 Just newPwm ->
                     ( { model
-                        | instructions = updateDeviceInstruction index flowIODevice (\inst -> { inst | pumpPwm = newPwm }) model.instructions
+                        | instructions =
+                            updateInstructionForRole
+                                index
+                                flowIODevice
+                                (\inst -> { inst | pumpPwm = newPwm })
+                                model.instructions
                       }
                     , Cmd.none
                     )
@@ -521,7 +646,7 @@ update msg model =
         PortStateChanged flowIODevice index port_ checked ->
             ( { model
                 | instructions =
-                    updateDeviceInstruction
+                    updateInstructionForRole
                         index
                         flowIODevice
                         (\inst -> { inst | ports = updatePort port_ checked inst.ports })
@@ -529,22 +654,6 @@ update msg model =
               }
             , Cmd.none
             )
-
-        DevicesChanged devices ->
-            let
-                newState =
-                    case model.state of
-                        RunningInstructions ->
-                            RunningInstructions
-
-                        _ ->
-                            if Array.isEmpty devices then
-                                Disabled
-
-                            else
-                                Editable
-            in
-            ( { model | devices = devices, state = newState }, Cmd.none )
 
         RunInstructions ->
             ( { model | state = RunningInstructions }, executeInstructions (encodeInstructions model.instructions) )
@@ -579,25 +688,77 @@ update msg model =
         DisabledFieldClicked _ ->
             ( model, Cmd.none )
 
+        AddRole roleName ->
+            ( { model
+                | roles = Array.push roleName model.roles
+                , instructions =
+                    { time = model.instructions.time
+                    , instructions =
+                        Dict.insert roleName
+                            (Array.repeat (Array.length model.instructions.time) defaultCommand)
+                            model.instructions.instructions
+                    }
+              }
+            , Cmd.none
+            )
 
-encodeInstructions : Array SchedulerInstruction -> JE.Value
+        RemoveRole index ->
+            -- TODO: Remove role from instructions as well
+            ( { model | roles = AE.removeAt index model.roles }, Cmd.none )
+
+        ReorderRole originalIndex newIndex ->
+            ( { model | roles = arrayMove originalIndex newIndex model.roles }, Cmd.none )
+
+        AssociateRoleToDevice roleName maybeDeviceId ->
+            ( { model | roleDeviceMapping = Dict.update roleName (\_ -> maybeDeviceId) model.roleDeviceMapping }
+            , Cmd.none
+            )
+
+        RenameRole index newName ->
+            let
+                maybeOldRole =
+                    Array.get index model.roles
+
+                replaceKey oldKey =
+                    Dict.Extra.mapKeys
+                        (\k ->
+                            if k == oldKey then
+                                newName
+
+                            else
+                                k
+                        )
+            in
+            case maybeOldRole of
+                Just oldRole ->
+                    ( { model
+                        | roles = Array.set index newName model.roles
+                        , roleDeviceMapping = replaceKey oldRole model.roleDeviceMapping
+                        , instructions =
+                            { time = model.instructions.time
+                            , instructions = replaceKey oldRole model.instructions.instructions
+                            }
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+
+encodeInstructions : Instructions -> JE.Value
 encodeInstructions instructions =
-    JE.array
-        (\inst ->
-            JE.object
-                [ ( "startTime", JE.string <| millisToString inst.time )
-                , ( "instructions", JE.dict identity encodeCommand inst.deviceInstructions )
-                ]
-        )
-        instructions
+    JE.object
+        [ ( "time", JE.array (\(MilliSeconds ms) -> JE.int ms) instructions.time )
+        , ( "instructions", JE.dict identity (JE.array encodeCommand) instructions.instructions )
+        ]
 
 
-instructionsDecoder : JD.Decoder (Array SchedulerInstruction)
+instructionsDecoder : JD.Decoder Instructions
 instructionsDecoder =
-    JD.array <|
-        JD.map2 (\startTime devices -> { time = MilliSeconds startTime, deviceInstructions = devices })
-            (JD.field "startTime" JD.int)
-            (JD.field "instructions" (JD.dict controlCommandDecoder))
+    JD.map2 (\timeArray instructions -> { time = timeArray, instructions = instructions })
+        (JD.field "time" <| JD.array <| (JD.int |> JD.map MilliSeconds))
+        (JD.field "instructions" (JD.dict <| JD.array controlCommandDecoder))
 
 
 subscriptions : Model -> Sub Msg
