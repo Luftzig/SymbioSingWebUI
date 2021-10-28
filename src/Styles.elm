@@ -1,7 +1,7 @@
 module Styles exposing (..)
 
 import Color.Dracula as Dracula
-import Element exposing (Attribute, Color, Element, alignTop, el, fill, height, htmlAttribute, none, px, rgb, rgb255, rgba, spacing, width)
+import Element exposing (Attribute, Color, Element, alignTop, el, fill, height, htmlAttribute, none, paddingXY, px, rgb, rgb255, rgba, shrink, spacing, spacingXY, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events
@@ -72,16 +72,16 @@ textField :
 textField attrs { isDisabled, label, text, onChange, placeholder, onChangeDisabled } =
     if isDisabled then
         Input.text
-            (attrs
-                ++ [ Background.color darkGrey
-                   , Border.width 1
-                   , Border.color lightGrey
-
-                   --, width <| fill
-                   , Font.color lightGrey
-
-                   --, height <| fill
-                   ]
+            ([ Background.color darkGrey
+             , Border.width 1
+             , Border.color lightGrey
+             , Font.color lightGrey
+             , width <| shrink
+             , height <| shrink
+             , spacingXY 2 4
+             , paddingXY 2 2
+             ]
+                ++ attrs
             )
             { label = Input.labelHidden label
             , onChange = \_ -> onChangeDisabled
@@ -90,7 +90,15 @@ textField attrs { isDisabled, label, text, onChange, placeholder, onChangeDisabl
             }
 
     else
-        Input.text (attrs ++ [ Background.color Dracula.black ])
+        Input.text
+            ([ Background.color Dracula.black
+             , width <| shrink
+             , height <| shrink
+             , spacingXY 2 4
+             , paddingXY 2 2
+             ]
+                ++ attrs
+            )
             { label = Input.labelHidden label
             , onChange = onChange
             , text = text

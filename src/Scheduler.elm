@@ -159,7 +159,7 @@ actionSelection command onChange =
         renderOption icon state =
             case state of
                 Element.Input.Idle ->
-                    El.el [ Background.color Dracula.red, Border.rounded 2, Border.width 1, Border.color Dracula.purple ] icon
+                    El.el [ El.centerY, Background.color Dracula.red, Border.rounded 2, Border.width 1, Border.color Dracula.purple ] icon
 
                 Element.Input.Focused ->
                     El.el
@@ -167,6 +167,7 @@ actionSelection command onChange =
                         , Border.rounded 2
                         , Border.width 2
                         , Border.color Dracula.pink
+                        , El.centerY
                         ]
                         icon
 
@@ -176,6 +177,7 @@ actionSelection command onChange =
                         , Border.rounded 2
                         , Border.width 0
                         , externalClass "svg-red"
+                        , El.centerY
                         , El.behindContent <|
                             El.el [ El.width El.fill, El.height El.fill, Background.color Dracula.green, Border.rounded 15 ] El.none
                         ]
@@ -185,7 +187,8 @@ actionSelection command onChange =
         [ Font.size 11
         , El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap"
         , cellHeight
-        , El.width <| El.px 224
+        , El.width <| El.fillPortion 3
+        , El.centerY
         ]
         { options =
             [ Element.Input.optionWith Inflate <| renderOption inflateIcon
@@ -210,7 +213,7 @@ pwmControl inst isDisabled label onChange =
             ]
                 |> List.map El.htmlAttribute
     in
-    textField (numberAttrs ++ [ El.width <| El.maximum 60 (fillPortion 1), cellHeight ])
+    textField (numberAttrs ++ [ El.width <| El.maximum 60 (fillPortion 1),  El.centerY ])
         { isDisabled = isDisabled
         , onChange = onChange
         , onChangeDisabled = DisabledFieldClicked ""
@@ -312,7 +315,7 @@ commonAttrs =
 
 
 cellWrapper content =
-    El.el (El.padding 2 :: commonAttrs) content
+    El.el (El.centerY :: El.padding 2 :: commonAttrs) content
 
 
 schedulerRow : RoleName -> SchedulerState -> Int -> SchedulerRow -> El.Element Msg
@@ -388,13 +391,55 @@ devicesTable model =
         timeColumn : El.IndexedColumn SchedulerRow Msg
         timeColumn =
             { header = El.el ([] ++ border) <| El.text "Time (ms)"
-            , width = El.maximum 120 (fillPortion 1)
+            , width = El.maximum 80 (fillPortion 1)
             , view =
                 \index row ->
                     cellWrapper <|
                         case row of
                             ExistingInstruction time _ ->
-                                textField [ El.htmlAttribute <| Html.Attributes.type_ "number" ]
+                                let
+                                    maybePrevious =
+                                        Array.get (index - 1) model.instructions.time
+
+                                    maybeNext =
+                                        Array.get (index + 1) model.instructions.time
+
+                                    isCorrectlyOrdered =
+                                        case ( maybePrevious, time, maybeNext ) of
+                                            ( Just (MilliSeconds previous), MilliSeconds current, Just (MilliSeconds next) ) ->
+                                                previous < current && current < next
+
+                                            ( Nothing, MilliSeconds current, Just (MilliSeconds next) ) ->
+                                                current < next
+
+                                            ( Just (MilliSeconds previous), MilliSeconds current, Nothing ) ->
+                                                previous < current
+
+                                            ( Nothing, MilliSeconds current, Nothing ) ->
+                                                True
+
+                                    errorAttributes =
+                                        if isCorrectlyOrdered then
+                                            []
+
+                                        else
+                                            [ El.behindContent <|
+                                                El.el
+                                                    [ El.width El.fill
+                                                    , El.height El.fill
+                                                    , Border.widthEach { bottom = 4, left = 0, right = 0, top = 0 }
+                                                    , Border.color Dracula.red
+                                                    ]
+                                                    El.none
+                                            ]
+                                in
+                                textField
+                                    ([ El.centerY
+                                     , El.htmlAttribute <| Html.Attributes.type_ "number"
+                                     , El.width <| El.px 80
+                                     ]
+                                        ++ errorAttributes
+                                    )
                                     { onChange = InstructionTimeChanged index
                                     , label = "Time at step " ++ String.fromInt index
                                     , text = millisToString time
@@ -404,7 +449,7 @@ devicesTable model =
                                     }
 
                             PlannedInstruction ->
-                                textField []
+                                textField [ El.centerY, El.width <| El.px 80 ]
                                     { onChange = InstructionTimeChanged index
                                     , label = "Time at step " ++ String.fromInt index
                                     , text = String.fromInt maxTime
