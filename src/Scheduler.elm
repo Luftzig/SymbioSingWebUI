@@ -9,8 +9,10 @@ import Dict.Extra
 import Element as El exposing (fillPortion, htmlAttribute, indexedTable)
 import Element.Background as Background
 import Element.Border as Border
+import Element.Events
 import Element.Font as Font
 import Element.Input exposing (labelAbove, labelHidden)
+import Element.Region as Region
 import File
 import File.Download
 import File.Select
@@ -21,7 +23,7 @@ import Html.Events
 import Json.Decode as JD
 import Json.Encode as JE
 import List.Extra
-import Styles exposing (darkGrey, inflateIcon, lightGrey, releaseIcon, stopIcon, textField, vacuumIcon)
+import Styles exposing (darkGrey, externalClass, fullWidth, inflateIcon, lightGrey, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 
 
@@ -73,6 +75,16 @@ type alias Instructions =
     }
 
 
+type RoleEditState
+    = NotEditing
+    | Editing Int
+
+
+type RoleDeviceSelectState
+    = SelectionClosed
+    | SelectionOpen Int
+
+
 type alias Model =
     { state : SchedulerState
     , instructions : Instructions
@@ -81,6 +93,10 @@ type alias Model =
     -- roles are abstract names for devices
     , roles : Array RoleName
     , roleDeviceMapping : Dict RoleName String
+    , display :
+        { roleEditing : RoleEditState
+        , roleDeviceSelection : RoleDeviceSelectState
+        }
     }
 
 
@@ -95,16 +111,11 @@ initModel =
     , devices = Array.empty
     , roles = Array.empty
     , roleDeviceMapping = Dict.empty
+    , display =
+        { roleEditing = NotEditing
+        , roleDeviceSelection = SelectionClosed
+        }
     }
-
-
-externalClass : String -> El.Attribute msg
-externalClass class =
-    htmlAttribute <| Html.Attributes.class class
-
-
-fullWidth =
-    El.width <| El.fill
 
 
 view : Model -> Html Msg
@@ -115,7 +126,7 @@ view model =
         , Font.color Dracula.white
         ]
         (El.column [ fullWidth, El.height <| El.fill ]
-            [ header
+            [ header model
             , devicesTable model
             , buttons model
             ]
@@ -126,12 +137,25 @@ buttonPadding =
     El.paddingXY 12 4
 
 
-header : El.Element Msg
-header =
+header : Model -> El.Element Msg
+header { roles } =
+    let
+        nextRoleName =
+            roles
+                |> Array.toList
+                |> List.filter (String.startsWith "Role ")
+                |> List.map (String.split " ")
+                |> List.filterMap (List.filterMap String.toInt >> List.head)
+                |> List.maximum
+                |> Maybe.map ((+) 1)
+                |> Maybe.withDefault 1
+                |> String.fromInt
+                >> (++) "Role "
+    in
     El.row [ fullWidth, El.spacingXY 20 8 ]
         [ El.el [ El.width <| El.fillPortion 3, El.spaceEvenly, Font.bold, Font.size 18 ] <| El.text "Schedule"
         , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
-            { onPress = Just (AddRole "Role 1"), label = El.text "+ Add Role" }
+            { onPress = Just (AddRole nextRoleName), label = El.text "+ Add Role" }
         , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
             { onPress = Just AddInstruction, label = El.text "+ Add Row" }
         , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
@@ -187,7 +211,7 @@ actionSelection command onChange =
         [ Font.size 11
         , El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap"
         , cellHeight
-        , El.width <| El.fillPortion 3
+        , El.width <| El.minimum (34 * 4) <| El.fillPortion 3
         , El.centerY
         ]
         { options =
@@ -213,7 +237,7 @@ pwmControl inst isDisabled label onChange =
             ]
                 |> List.map El.htmlAttribute
     in
-    textField (numberAttrs ++ [ El.width <| El.maximum 60 (fillPortion 1),  El.centerY ])
+    textField (numberAttrs ++ [ El.width <| El.maximum 60 (fillPortion 1), El.centerY ])
         { isDisabled = isDisabled
         , onChange = onChange
         , onChangeDisabled = DisabledFieldClicked ""
@@ -314,10 +338,6 @@ commonAttrs =
     cellHeight :: border
 
 
-cellWrapper content =
-    El.el (El.centerY :: El.padding 2 :: commonAttrs) content
-
-
 schedulerRow : RoleName -> SchedulerState -> Int -> SchedulerRow -> El.Element Msg
 schedulerRow role state index row =
     case row of
@@ -352,14 +372,12 @@ devicesTable model =
                 last array =
                     Array.get (Array.length array - 1) array
             in
-            Debug.log ("instructions at " ++ Debug.toString index)
-                (rolesInstructions
-                    |> Dict.map
-                        (\_ commands ->
-                            Array.get index commands
-                                |> Maybe.withDefault defaultCommand
-                        )
-                )
+            rolesInstructions
+                |> Dict.map
+                    (\_ commands ->
+                        Array.get index commands
+                            |> Maybe.withDefault defaultCommand
+                    )
 
         rows : List SchedulerRow
         rows =
@@ -388,9 +406,12 @@ devicesTable model =
                 |> Maybe.map ((+) 10)
                 |> Maybe.withDefault 0
 
+        cellWrapper content =
+            El.el (El.padding 2 :: commonAttrs) content
+
         timeColumn : El.IndexedColumn SchedulerRow Msg
         timeColumn =
-            { header = El.el ([] ++ border) <| El.text "Time (ms)"
+            { header = El.el (El.height El.fill :: El.padding 4 :: border) <| El.text "Time (ms)"
             , width = El.maximum 80 (fillPortion 1)
             , view =
                 \index row ->
@@ -444,7 +465,7 @@ devicesTable model =
                                     , label = "Time at step " ++ String.fromInt index
                                     , text = millisToString time
                                     , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
-                                    , isDisabled = Debug.log "model.state" model.state /= Editable
+                                    , isDisabled = model.state /= Editable
                                     , onChangeDisabled = DisabledFieldClicked "Time column disabled"
                                     }
 
@@ -459,27 +480,139 @@ devicesTable model =
                                     }
             }
 
-        roleHeader : RoleName -> El.Element Msg
-        roleHeader roleName =
+        roleHeader : Int -> RoleName -> El.Element Msg
+        roleHeader roleIndex roleName =
             let
                 device =
                     Dict.get roleName model.roleDeviceMapping
+
+                isBeingEdit =
+                    model.display.roleEditing == Editing roleIndex
+
+                isDuplicate =
+                    Array.filter ((==) roleName) model.roles |> Array.length |> (\count -> count > 1)
+
+                duplicateError =
+                    if isDuplicate then
+                        [ El.behindContent <|
+                            El.el
+                                [ fullWidth
+                                , El.height El.fill
+                                , Border.widthEach { bottom = 4, left = 0, right = 0, top = 0 }
+                                , Border.color Dracula.red
+                                ]
+                                El.none
+                        ]
+
+                    else
+                        []
+
+                namePart =
+                    El.row [ fullWidth ] <|
+                        if isBeingEdit then
+                            [ Element.Input.text
+                                (duplicateError
+                                    ++ [ fullWidth
+                                       , El.padding 2
+                                       , El.spacingXY 2 4
+                                       , Background.color Dracula.black
+                                       , Element.Events.onLoseFocus EndRoleEditing
+                                       ]
+                                )
+                                { onChange = RenameRole roleIndex
+                                , text = roleName
+                                , placeholder = Nothing
+                                , label = Element.Input.labelHidden "Role name"
+                                }
+                            , Element.Input.button [ El.alignRight, El.padding 2 ]
+                                { onPress = Just <| EndRoleEditing
+                                , label = El.el [ Region.description "End editing" ] <| El.text "✓"
+                                }
+                            ]
+
+                        else
+                            [ El.el (duplicateError ++ [ El.padding 2, El.width El.fill ]) <| El.text roleName
+                            , Element.Input.button [ El.alignRight, El.padding 2 ]
+                                { onPress = Just <| EditRole roleIndex
+                                , label = El.el [ Region.description "Rename" ] <| El.text "✎"
+                                }
+                            ]
+
+                deviceSelection =
+                    let
+                        deviceIds : Array DeviceId
+                        deviceIds =
+                            AE.filterMap (.details >> Maybe.map .id) model.devices
+
+                        devicesList : El.Element Msg
+                        devicesList =
+                            El.column
+                                [ fullWidth
+                                , El.padding 2
+                                , El.spacing 2
+                                , Background.color Dracula.gray
+                                ]
+                            <|
+                                AE.mapToList
+                                    (\id ->
+                                        Element.Input.button
+                                            [ El.padding 2
+                                            , Border.widthEach
+                                                { bottom = 1
+                                                , top = 0
+                                                , left = 0
+                                                , right = 0
+                                                }
+                                            ]
+                                            { onPress = Just <| AssociateRoleToDevice roleName (Just id)
+                                            , label = El.text id
+                                            }
+                                    )
+                                    deviceIds
+                    in
+                    El.row [ fullWidth, Font.size 12 ] <|
+                        if model.display.roleDeviceSelection == SelectionOpen roleIndex then
+                            [ El.el
+                                [ El.below <| devicesList
+                                , fullWidth
+                                ]
+                              <|
+                                El.text (device |> Maybe.withDefault "")
+                            , Element.Input.button [ El.alignRight, El.padding 2 ]
+                                { onPress = Just <| ChangeDeviceSelection SelectionClosed
+                                , label = El.text "⌃"
+                                }
+                            ]
+
+                        else
+                            [ El.el [ fullWidth ] <| El.text (device |> Maybe.withDefault "")
+                            , Element.Input.button [ El.alignRight, El.padding 2 ]
+                                { onPress = Just <| ChangeDeviceSelection <| SelectionOpen roleIndex
+                                , label = El.text "⌄"
+                                }
+                            ]
             in
-            El.column (border ++ [ El.width El.fill ])
-                [ El.el [ El.width El.fill ] <| El.text roleName
-                , El.el [ El.width El.fill, Font.size 12 ] <| El.text (Maybe.withDefault "" device)
+            El.column (border ++ [ El.width El.fill, El.height El.fill ])
+                [ namePart
+                , deviceSelection
                 ]
 
-        roleColumn : RoleName -> El.IndexedColumn SchedulerRow Msg
-        roleColumn roleName =
-            { header = roleHeader roleName
+        roleColumn : Int -> RoleName -> El.IndexedColumn SchedulerRow Msg
+        roleColumn roleIndex roleName =
+            { header = roleHeader roleIndex roleName
             , width = El.maximum 300 <| fillPortion 2
             , view = schedulerRow roleName model.state
             }
     in
-    indexedTable [ fullWidth, Font.size 11, El.padding 2 ]
+    indexedTable
+        [ El.width <| El.maximum 1060 El.fill
+        , El.height <| El.minimum 400 (El.fillPortion 10)
+        , El.scrollbarY
+        , Font.size 11
+        , El.padding 2
+        ]
         { data = rows
-        , columns = timeColumn :: AE.mapToList roleColumn model.roles
+        , columns = timeColumn :: AE.indexedMapToList roleColumn model.roles
         }
 
 
@@ -531,7 +664,10 @@ type Msg
     | RemoveRole Int
     | ReorderRole Int Int
     | RenameRole Int String
+    | EditRole Int
+    | EndRoleEditing
     | AssociateRoleToDevice RoleName (Maybe String)
+    | ChangeDeviceSelection RoleDeviceSelectState
 
 
 createNewInstruction : Array RoleName -> Instructions -> Instructions
@@ -755,7 +891,14 @@ update msg model =
             ( { model | roles = arrayMove originalIndex newIndex model.roles }, Cmd.none )
 
         AssociateRoleToDevice roleName maybeDeviceId ->
-            ( { model | roleDeviceMapping = Dict.update roleName (\_ -> maybeDeviceId) model.roleDeviceMapping }
+            let
+                display =
+                    model.display
+            in
+            ( { model
+                | roleDeviceMapping = Dict.update roleName (\_ -> maybeDeviceId) model.roleDeviceMapping
+                , display = { display | roleDeviceSelection = SelectionClosed }
+              }
             , Cmd.none
             )
 
@@ -789,6 +932,27 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        EditRole roleIndex ->
+            let
+                display =
+                    model.display
+            in
+            ( { model | display = { display | roleEditing = Editing roleIndex } }, Cmd.none )
+
+        EndRoleEditing ->
+            let
+                display =
+                    model.display
+            in
+            ( { model | display = { display | roleEditing = NotEditing } }, Cmd.none )
+
+        ChangeDeviceSelection roleDeviceSelectState ->
+            let
+                display =
+                    model.display
+            in
+            ( { model | display = { display | roleDeviceSelection = roleDeviceSelectState } }, Cmd.none )
 
 
 encodeInstructions : Instructions -> JE.Value
