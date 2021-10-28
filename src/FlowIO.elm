@@ -288,7 +288,7 @@ commandActionDecoder =
 
 pwmValueDecoder : JD.Decoder Int
 pwmValueDecoder =
-    JD.field "pwmVal" JD.int
+    JD.field "pumpPwm" JD.int
         |> JD.andThen
             (\i ->
                 case ( i < 100, i > 255 ) of

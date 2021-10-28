@@ -140,3 +140,12 @@ stopIcon =
 stopButton : Maybe msg -> Element msg
 stopButton action =
     Input.button [ Region.description "Stop" ] { label = stopIcon, onPress = action }
+
+
+externalClass : String -> Element.Attribute msg
+externalClass class =
+    htmlAttribute <| Html.Attributes.class class
+
+
+fullWidth =
+    Element.width <| Element.fill
