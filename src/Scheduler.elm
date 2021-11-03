@@ -1,4 +1,4 @@
-port module Scheduler exposing (Model, Msg(..), initModel, subscriptions, update, view)
+module Scheduler exposing (Model, Msg(..), initModel, subscriptions, update, view)
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -25,9 +25,7 @@ import Json.Encode as JE
 import List.Extra
 import Styles exposing (darkGrey, externalClass, fullWidth, inflateIcon, lightGrey, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
-
-
-port executeInstructions : JE.Value -> Cmd msg
+import Time exposing (Posix)
 
 
 main =
@@ -40,9 +38,9 @@ main =
 
 
 type SchedulerState
-    = Disabled
-    | Editable
-    | RunningInstructions
+    = Paused { stoppedTime : Posix, commandIndex : Int }
+    | Stopped
+    | RunningInstructions { startTime : Posix, commandIndex : Int }
 
 
 type Time
@@ -106,7 +104,7 @@ emptyInstructions =
 
 initModel : Model
 initModel =
-    { state = Editable
+    { state = Stopped
     , instructions = emptyInstructions
     , devices = Array.empty
     , roles = Array.empty
@@ -318,10 +316,29 @@ portsSelection inst onPortChange =
 
 schedulerControls : RoleName -> SchedulerState -> Int -> FlowIOCommand -> El.Element Msg
 schedulerControls role state rowIndex command =
-    El.row (commonAttrs ++ [])
+    let
+        currentlyRunningRow =
+            case state of
+                Paused { commandIndex } ->
+                    commandIndex == rowIndex
+
+                Stopped ->
+                    False
+
+                RunningInstructions { commandIndex } ->
+                    commandIndex == rowIndex
+
+        borderEffect =
+            if currentlyRunningRow then
+                Border.color Dracula.green
+
+            else
+                Border.color Dracula.white
+    in
+    El.row [ cellHeight, Border.width 1, borderEffect ]
         [ actionSelection command (ActionChanged role rowIndex)
         , pwmControl command
-            (state /= Editable)
+            (state /= Stopped)
             ("PWM " ++ role ++ " row " ++ String.fromInt rowIndex)
             (PWMChanged role rowIndex)
         , portsSelection command (PortStateChanged role rowIndex)
@@ -330,12 +347,8 @@ schedulerControls role state rowIndex command =
 
 border =
     [ Border.width 1
-    , Border.color <| El.rgb255 0xDD 0xDD 0xDD
+    , Border.color <| Dracula.white
     ]
-
-
-commonAttrs =
-    cellHeight :: border
 
 
 schedulerRow : RoleName -> SchedulerState -> Int -> SchedulerRow -> El.Element Msg
@@ -351,10 +364,16 @@ schedulerRow role state index row =
                     schedulerControls role state index command
 
                 Nothing ->
-                    El.row commonAttrs [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []", El.text "no cmd" ]
+                    El.row (cellHeight :: border)
+                        [ El.text "actions"
+                        , El.text "PWM"
+                        , El.text "[] [] [] [] []"
+                        , El.text
+                            "no cmd"
+                        ]
 
         PlannedInstruction ->
-            El.row commonAttrs [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []" ]
+            El.row (cellHeight :: border) [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []" ]
 
 
 type SchedulerRow
@@ -406,8 +425,8 @@ devicesTable model =
                 |> Maybe.map ((+) 10)
                 |> Maybe.withDefault 0
 
-        cellWrapper content =
-            El.el (El.padding 2 :: commonAttrs) content
+        cellWrapper borderColor content =
+            El.el [ El.padding 2, cellHeight, Border.width 1, borderColor ] content
 
         timeColumn : El.IndexedColumn SchedulerRow Msg
         timeColumn =
@@ -415,7 +434,26 @@ devicesTable model =
             , width = El.maximum 80 (fillPortion 1)
             , view =
                 \index row ->
-                    cellWrapper <|
+                    let
+                        currentlyRunningRow =
+                            case model.state of
+                                Paused { commandIndex } ->
+                                    commandIndex == index
+
+                                Stopped ->
+                                    False
+
+                                RunningInstructions { commandIndex } ->
+                                    commandIndex == index
+
+                        currentlyRunningBorderColor =
+                            if currentlyRunningRow then
+                                Border.color Dracula.green
+
+                            else
+                                Border.color Dracula.white
+                    in
+                    cellWrapper currentlyRunningBorderColor <|
                         case row of
                             ExistingInstruction time _ ->
                                 let
@@ -465,7 +503,7 @@ devicesTable model =
                                     , label = "Time at step " ++ String.fromInt index
                                     , text = millisToString time
                                     , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
-                                    , isDisabled = model.state /= Editable
+                                    , isDisabled = model.state /= Stopped
                                     , onChangeDisabled = DisabledFieldClicked "Time column disabled"
                                     }
 
@@ -625,24 +663,40 @@ attrIfElse condition ifTrue ifFalse =
         ifFalse
 
 
+buttons : Model -> El.Element Msg
 buttons model =
+    let
+        numRolesAssociated =
+            model.roles
+                |> Array.map (\role -> model.roleDeviceMapping |> Dict.member role)
+                |> Array.length
+
+        allRolesAssociated =
+            numRolesAssociated == (model.roles |> Array.length)
+    in
     El.row [ Font.color Dracula.white, El.centerX, El.spacingXY 8 20 ]
         [ Element.Input.button
             [ externalClass "btn-scheduler"
             , buttonPadding
-            , Background.color <| El.rgb255 0x4C 0xAF 0x50
-            , attrIfElse (model.state /= Editable) (El.alpha 0.4) (El.alpha 1.0)
+            , Background.color <| Dracula.green
+            , attrIfElse (model.state /= Stopped) (El.alpha 0.4) (El.alpha 1.0)
             ]
             { label = El.text "▶️ Run"
             , onPress =
-                if model.state == Editable then
+                if model.state == Stopped && numRolesAssociated > 0 then
                     Just RunInstructions
 
                 else
                     Nothing
             }
-        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ] { label = El.text "Save", onPress = Just DownloadInstructions }
-        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ] { label = El.text "Upload", onPress = Just UploadInstructions }
+        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
+            { label = El.text "Save"
+            , onPress = Just DownloadInstructions
+            }
+        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
+            { label = El.text "Upload"
+            , onPress = Just UploadInstructions
+            }
         ]
 
 
@@ -655,6 +709,8 @@ type Msg
     | PWMChanged RoleName Int String
     | PortStateChanged RoleName Int Port Bool
     | RunInstructions
+    | StartInstructions Posix
+    | StopInstructions
     | DownloadInstructions
     | UploadInstructions
     | UploadSelected File.File
@@ -668,6 +724,7 @@ type Msg
     | EndRoleEditing
     | AssociateRoleToDevice RoleName (Maybe String)
     | ChangeDeviceSelection RoleDeviceSelectState
+    | Tick Posix
 
 
 createNewInstruction : Array RoleName -> Instructions -> Instructions
@@ -783,8 +840,8 @@ update msg model =
             ( { model | instructions = emptyInstructions }, Cmd.none )
 
         InstructionTimeChanged instructionIndex newValue ->
-            case String.toInt newValue of
-                Just newTime ->
+            let
+                updateNewTime newTime =
                     ( { model
                         | instructions =
                             { time =
@@ -794,27 +851,34 @@ update msg model =
                       }
                     , Cmd.none
                     )
+            in
+            case String.toInt newValue of
+                Just newTime ->
+                    updateNewTime newTime
 
                 _ ->
-                    ( model, Cmd.none )
+                    if String.isEmpty newValue then
+                        updateNewTime 0
 
-        ActionChanged flowIODevice index flowIOAction ->
+                    else
+                        ( model, Cmd.none )
+
+        ActionChanged role index flowIOAction ->
             ( { model
                 | instructions =
-                    updateInstructionForRole index flowIODevice (\inst -> { inst | action = flowIOAction }) model.instructions
+                    updateInstructionForRole index role (\inst -> { inst | action = flowIOAction }) model.instructions
               }
             , Cmd.none
             )
 
-        --( model, Cmd.none )
-        PWMChanged flowIODevice index newValue ->
+        PWMChanged role index newValue ->
             case String.toInt newValue of
                 Just newPwm ->
                     ( { model
                         | instructions =
                             updateInstructionForRole
                                 index
-                                flowIODevice
+                                role
                                 (\inst -> { inst | pumpPwm = newPwm })
                                 model.instructions
                       }
@@ -824,12 +888,12 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
-        PortStateChanged flowIODevice index port_ checked ->
+        PortStateChanged role index port_ checked ->
             ( { model
                 | instructions =
                     updateInstructionForRole
                         index
-                        flowIODevice
+                        role
                         (\inst -> { inst | ports = updatePort port_ checked inst.ports })
                         model.instructions
               }
@@ -837,7 +901,7 @@ update msg model =
             )
 
         RunInstructions ->
-            ( { model | state = RunningInstructions }, executeInstructions (encodeInstructions model.instructions) )
+            ( model, Task.perform StartInstructions Time.now )
 
         DownloadInstructions ->
             ( model
@@ -860,7 +924,12 @@ update msg model =
             in
             case result of
                 Ok instructions ->
-                    ( { model | instructions = instructions }, Cmd.none )
+                    ( { model
+                        | instructions = instructions
+                        , roles = Dict.keys instructions.instructions |> Array.fromList
+                      }
+                    , Cmd.none
+                    )
 
                 Err error ->
                     Debug.log (JD.errorToString error)
@@ -954,6 +1023,94 @@ update msg model =
             in
             ( { model | display = { display | roleDeviceSelection = roleDeviceSelectState } }, Cmd.none )
 
+        StopInstructions ->
+            ( { model | state = Stopped }, Cmd.none )
+
+        Tick posix ->
+            case model.state of
+                Paused record ->
+                    Debug.todo "Pausing not implemented yet"
+
+                Stopped ->
+                    ( model, Cmd.none )
+
+                RunningInstructions { startTime, commandIndex } ->
+                    let
+                        elapsedTime =
+                            Time.posixToMillis posix - Time.posixToMillis startTime
+
+                        currentCommandTime =
+                            Array.get commandIndex model.instructions.time
+                    in
+                    case currentCommandTime of
+                        Just (MilliSeconds currentTime) ->
+                            if elapsedTime >= currentTime then
+                                -- We need to run the command and update the index
+                                let
+                                    instructions : RolesInstructions
+                                    instructions =
+                                        model.instructions.instructions
+
+                                    deviceIdToIdx : Dict DeviceId Int
+                                    deviceIdToIdx =
+                                        model.devices
+                                            |> Array.toIndexedList
+                                            |> List.filterMap
+                                                (\( idx, device ) ->
+                                                    device.details
+                                                        |> Maybe.map (\details -> ( details.id, idx ))
+                                                )
+                                            |> Dict.fromList
+
+                                    findDeviceId : ( RoleName, b ) -> Maybe ( DeviceId, b )
+                                    findDeviceId ( role, commandsArray ) =
+                                        Dict.get role model.roleDeviceMapping
+                                            |> Maybe.map (\deviceId -> ( deviceId, commandsArray ))
+
+                                    mapDeviceIdToDeviceIndex : ( DeviceId, b ) -> Maybe ( Int, b )
+                                    mapDeviceIdToDeviceIndex ( deviceId, commandsArray ) =
+                                        Dict.get deviceId deviceIdToIdx
+                                            |> Maybe.map (\idx -> ( idx, commandsArray ))
+
+                                    extractCommandAtIndex : ( a, Array b ) -> Maybe ( a, b )
+                                    extractCommandAtIndex ( deviceIdx, commandsArray ) =
+                                        Array.get commandIndex
+                                            commandsArray
+                                            |> Maybe.map (\cmd -> ( deviceIdx, cmd ))
+
+                                    createCommand : ( Int, FlowIOCommand ) -> Cmd msg
+                                    createCommand ( deviceIdx, command ) =
+                                        sendCommand
+                                            { deviceIndex = deviceIdx
+                                            , command =
+                                                encodeCommand command
+                                            }
+
+                                    commands : List (Cmd Msg)
+                                    commands =
+                                        instructions
+                                            |> Dict.toList
+                                            |> List.filterMap findDeviceId
+                                            |> List.filterMap mapDeviceIdToDeviceIndex
+                                            |> List.filterMap extractCommandAtIndex
+                                            |> List.map createCommand
+                                in
+                                ( { model | state = RunningInstructions { startTime = startTime, commandIndex = commandIndex + 1 } }
+                                , Cmd.batch
+                                    commands
+                                )
+
+                            else
+                                -- Do nothing, wait for the next clock tick
+                                ( model, Cmd.none )
+
+                        Nothing ->
+                            -- There is no next command, so we are done!
+                            ( { model | state = Stopped }, Cmd.none )
+
+        StartInstructions posix ->
+            ( { model | state = RunningInstructions { startTime = posix, commandIndex = 0 } }, Cmd.none )
+
 
 encodeInstructions : Instructions -> JE.Value
 encodeInstructions instructions =
@@ -970,7 +1127,24 @@ instructionsDecoder =
         (JD.field "instructions" (JD.dict <| JD.array controlCommandDecoder))
 
 
+defaultTickIntervalMilliSeconds =
+    5
+
+
 subscriptions : Model -> Sub Msg
-subscriptions _ =
+subscriptions { state } =
+    let
+        runInstructionsSub =
+            case state of
+                Paused _ ->
+                    Sub.none
+
+                Stopped ->
+                    Sub.none
+
+                RunningInstructions _ ->
+                    Time.every defaultTickIntervalMilliSeconds Tick
+    in
     Sub.batch
-        []
+        [ runInstructionsSub
+        ]

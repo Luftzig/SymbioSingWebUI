@@ -1,8 +1,30 @@
-module FlowIO exposing (..)
+port module FlowIO exposing (..)
 
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
+
+
+--{{ Communicating with FlowIO devices }}
+port createDevice : () -> Cmd msg
+
+
+port connectToDevice : Int -> Cmd msg
+
+
+port disconnectDevice : Int -> Cmd msg
+
+
+port deviceStatusChanged : ({ deviceIndex : Int, status : String, details : Maybe JE.Value } -> msg) -> Sub msg
+
+
+port controlServiceStatusChanged : ({ deviceIndex : Int, status : JE.Value } -> msg) -> Sub msg
+
+
+port listenToControlService : Int -> Cmd msg
+
+
+port sendCommand : { deviceIndex : Int, command : JE.Value } -> Cmd msg
 
 
 
@@ -308,10 +330,10 @@ portsDecoder =
     let
         fromBool b =
             if b then
-                Close
+                Open
 
             else
-                Open
+                Close
     in
     JD.field "ports" <|
         JD.map5

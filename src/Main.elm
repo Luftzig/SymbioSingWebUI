@@ -1,4 +1,4 @@
-port module Main exposing (main)
+module Main exposing (main)
 
 import Array exposing (Array)
 import Array.Extra
@@ -16,7 +16,7 @@ import Json.Decode exposing (Value, decodeValue)
 import Json.Encode
 import List.Extra as LE
 import Scheduler
-import Styles exposing (bottomBorder, buttonCssIcon, darkGrey, grey, inflateButton, releaseButton, rightBorder, rust, stopButton, vacuumButton )
+import Styles exposing (bottomBorder, buttonCssIcon, darkGrey, grey, inflateButton, releaseButton, rightBorder, rust, stopButton, vacuumButton)
 import Task
 
 
@@ -48,27 +48,6 @@ initModel =
     , listeners = []
     , scheduler = Scheduler.initModel
     }
-
-
-port createDevice : () -> Cmd msg
-
-
-port connectToDevice : Int -> Cmd msg
-
-
-port disconnectDevice : Int -> Cmd msg
-
-
-port deviceStatusChanged : ({ deviceIndex : Int, status : String, details : Maybe Value } -> msg) -> Sub msg
-
-
-port controlServiceStatusChanged : ({ deviceIndex : Int, status : Value } -> msg) -> Sub msg
-
-
-port listenToControlService : Int -> Cmd msg
-
-
-port sendCommand : { deviceIndex : Int, command : Json.Encode.Value } -> Cmd msg
 
 
 sendMessage : msg -> Cmd msg
@@ -104,6 +83,7 @@ subscriptions model =
     in
     Sub.batch
         ([ deviceStatusChanged DeviceStatusChanged
+         , Scheduler.subscriptions model.scheduler |> Sub.map SchedulerMessage
          ]
             ++ (if shouldListenToControlService then
                     [ controlServiceStatusChanged ControlServiceUpdate ]
