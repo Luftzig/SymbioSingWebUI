@@ -7,6 +7,8 @@ import Svg.Attributes exposing (..)
 
 
 -- SVG for the fancy FlowIO diagram
+
+
 pump1On =
     g [ id "svg_pump1_on", transform "translate(828.026 848.8)", fill "none" ]
         [ Svg.path [ fill "#ccc", fillRule "evenodd", d "M100.012 224.452L.172 271.44V2.16l99.84 50.362c-34.383 47.034-44.447 101.032 0 171.93z" ] [], Svg.path [ class "svg_air", fillRule "evenodd", d "M317.44 175.785H514v37.44H317.44zM317.36 60.44h196.56v37.44H317.36z" ] [], ellipse [ class "svg_air", transform "matrix(1 0 0 1 75.56 2.127)", rx "134.28", ry "134.64", cx "134.28", cy "134.64", fillRule "evenodd" ] [], Svg.path [ stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M0 0v272.88" ] [], Svg.path [ d "M318.485 219.026c-35.323 46.844-96.637 65.862-152.27 47.231-55.632-18.63-93.125-70.74-93.11-129.41.013-58.669 37.532-110.76 93.173-129.365 55.641-18.605 116.946.444 152.246 47.305", stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeLinejoin "bevel" ] [], circle [ transform "matrix(-1 0 0 1 221 125.64)", r "11.16", cx "11.16", cy "11.16", stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeLinejoin "bevel" ] [], Svg.path [ d "M341.274 102.96a130.326 130.326 0 01-.038 69.466", stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeLinejoin "bevel" ] [], Svg.path [ stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M0 272.584l101.716-45.947M0 0l99.68 52.521M341.148 101.328H510.4M342.228 172.426H510.4M321.48 216.966H510.4M322.485 56.872H510.4" ] [], Svg.path [ stroke "#d00000", strokeWidth "10.8", strokeLinecap "square", strokeMiterlimit "2", d "M475.04 244.213h-79.56" ] [], Svg.path [ stroke "#d00000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M387.198 245.07l20.113 11.674M386.02 243.229l21.29-12.788" ] [], Svg.path [ transform "matrix(.93281 0 0 -1 379.796 33.487)", stroke "#d00000", strokeWidth "10.8", strokeLinecap "square", strokeMiterlimit "2", d "M0 0h79.56" ] [], Svg.path [ transform "matrix(.93281 0 0 -1 438.646 46.018)", stroke "#d00000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M20.112 11.673L0 0" ] [], Svg.path [ transform "matrix(.93281 0 0 -1 438.646 33.223)", stroke "#d00000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M21.29 0L0 12.788" ] [], circle [ transform "matrix(-1 0 0 1 221.032 125.984)", r "11.16", cx "11.16", cy "11.16", stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeLinejoin "bevel" ] [], Svg.path [ stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M220.449 137.152l-15.12-113.04M229.103 108.432l19.08 3.96M226.223 90.792l33.12 6.48M223.343 69.732l48.96 9.72M220.823 47.592l62.262 12.16M218.85 28.072l73.595 12.96M231.245 126.996l5.04 1.156" ] [], circle [ transform "scale(1 -1) rotate(-64.127 -8.019 -221.687)", r "11.16", cx "11.16", cy "11.16", stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeLinejoin "bevel" ] [], Svg.path [ stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M205.25 127.812l-95.112 62.933M175.631 132.558l-4.763-18.896M161.016 142.847l-8.622-32.628M143.324 154.629l-12.62-48.294M124.503 166.558l-16.229-61.328M107.801 176.851l-20.455-71.873M191.4 122.53l-1.16-5.04" ] [], circle [ transform "scale(1 -1) rotate(53.8 256.456 131.992)", r "11.16", cx "11.16", cy "11.16", stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeLinejoin "bevel" ] [], Svg.path [ stroke "#000", strokeWidth "7.2", strokeLinecap "square", strokeMiterlimit "2", d "M202.835 145.846l100.148 54.561M220.9 169.792l-14.465 13.058M236.835 177.886l-24.79 22.9M255.53 188l-36.76 33.768M274.885 199.043l-46.585 43.06M291.802 208.98l-53.924 51.733M204.654 160.556l-3.91 3.385" ] [] ]
@@ -122,7 +124,7 @@ tubeParallelVac =
 tubes : FlowIO.Configuration -> List (Svg msg)
 tubes configuration =
     case configuration of
-        FlowIO.Standard ->
+        FlowIO.StandardConfiguration ->
             [ tubeInlet, tubeOutlet ]
 
         FlowIO.InflationSeries ->
@@ -192,3 +194,37 @@ deviceBox { pump1, pump2, inlet, outlet, port1, port2, port3, port4, port5 } con
          ]
             ++ tubes config
         )
+
+
+
+{- Configuration Icons -}
+
+
+configGeneralIcon color =
+    svg
+        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], Svg.path [ d "M464 299l-68 82M470 299l68 81M467 307v356M256 663l67-82M249 664l-67-81M252 655V240" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
+
+
+configInflateSeriesIcon color =
+    svg
+        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ Svg.path [ d "M252 664V484" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], Svg.path [ d "M464 299l-68 82M470 299l68 81M467 307v153M453 479H282" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
+
+
+configInflateParallelIcon color =
+    svg
+        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], Svg.path [ d "M464 299l-68 82M470 299l68 81M467 307v356M248 299l-67 82M255 299l67 81M252 307v356" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
+
+
+configVacuumSeriesIcon color =
+    svg
+        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ Svg.path [ d "M252 480V249M470 663l68-82M464 664l-68-81M467 655V491M263 483h142" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
+
+
+configVacuumParallelIcon color =
+    svg
+        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ Svg.path [ d "M256 662l68-82M250 663l-68-81M253 654V240" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], Svg.path [ d "M471 664l68-81M465 665l-68-81M468 657V255" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], circle [ transform "translate(415 429)", cx "52.9", cy "52.9", r "52.9" ] [] ]

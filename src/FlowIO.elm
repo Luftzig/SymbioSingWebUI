@@ -1,11 +1,60 @@
-port module FlowIO exposing (..)
+port module FlowIO exposing
+    ( Configuration(..)
+    , ControlServiceStatus
+    , DeviceDetails
+    , DeviceId
+    , FlowIOAction(..)
+    , FlowIOCommand
+    , FlowIODevice
+    , FlowIOService(..)
+    , FlowIOStatus(..)
+    , Port(..)
+    , PortState(..)
+    , PortsState
+    , commandActionDecoder
+    , connectToDevice
+    , controlCommandDecoder
+    , controlServiceStatusChanged
+    , controlServiceStatusDecoder
+    , createDevice
+    , defaultCommand
+    , defaultDevice
+    , deviceDetailsDecoder
+    , deviceStatusChanged
+    , disconnectDevice
+    , encodeCommand
+    , getDeviceConfiguration
+    , getLastCommand
+    , isPortOpen
+    , listenToControlService
+    , listenToDeviceConfiguration
+    , portFromBool
+    , sendCommand
+    , serviceFromString
+    , serviceToPrettyName
+    , serviceToString
+    , setAction
+    , setConfiguration
+    , setControlServiceStatusTo
+    , setDetailsTo
+    , setDeviceConfiguration
+    , setLastCommand
+    , setPort
+    , setPumpPwm
+    , setStatusTo
+    , stopAll
+    , updateCommandFromStatus
+    )
 
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
 
 
+
 --{{ Communicating with FlowIO devices }}
+
+
 port createDevice : () -> Cmd msg
 
 
@@ -30,6 +79,32 @@ port sendCommand : { deviceIndex : Int, command : JE.Value } -> Cmd msg
 port stopAll : Int -> Cmd msg
 
 
+port getDeviceConfiguration : Int -> Cmd msg
+
+
+port listenToDeviceConfiguration_ : ({ deviceIndex : Int, configuration : String } -> msg) -> Sub msg
+
+
+listenToDeviceConfiguration : ({ deviceIndex : Int, configuration : Maybe Configuration } -> msg) -> Sub msg
+listenToDeviceConfiguration createMessage =
+    listenToDeviceConfiguration_
+        (\{ deviceIndex, configuration } ->
+            createMessage
+                { deviceIndex = deviceIndex
+                , configuration = configurationDecoding configuration
+                }
+        )
+
+
+port setDeviceConfiguration_ : { deviceIndex : Int, configuration : String } -> Cmd msg
+
+
+setDeviceConfiguration : Int -> Configuration -> Cmd msg
+setDeviceConfiguration index configuration =
+    setDeviceConfiguration_ { deviceIndex = index, configuration = configurationEncoding configuration }
+
+
+
 -- FlowIODevice types
 
 
@@ -37,6 +112,7 @@ type alias FlowIODevice =
     { status : FlowIOStatus
     , details : Maybe DeviceDetails
     , controlServiceStatus : Maybe ControlServiceStatus
+    , configuration : Maybe Configuration
     }
 
 
@@ -57,6 +133,7 @@ type FlowIOStatus
 type FlowIOService
     = ControlService
     | ConfigService
+    | BatteryService
     | UnknownService String
 
 
@@ -72,6 +149,25 @@ serviceToString service =
         UnknownService details ->
             "unknown-service:" ++ details
 
+        BatteryService ->
+            "battery-service"
+
+
+serviceToPrettyName : FlowIOService -> String
+serviceToPrettyName service =
+    case service of
+        ControlService ->
+            "Control"
+
+        ConfigService ->
+            "Configuration"
+
+        UnknownService details ->
+            "Unknown"
+
+        BatteryService ->
+            "Battery"
+
 
 serviceFromString : String -> FlowIOService
 serviceFromString string =
@@ -81,6 +177,9 @@ serviceFromString string =
 
         "config-service" ->
             ConfigService
+
+        "battery-service" ->
+            BatteryService
 
         other ->
             UnknownService other
@@ -102,7 +201,7 @@ type alias ControlServiceStatus =
 
 
 type Configuration
-    = Standard
+    = StandardConfiguration
     | InflationSeries
     | InflationParallel
     | VacuumSeries
@@ -118,6 +217,7 @@ defaultDevice =
     { status = NotConnected
     , details = Nothing
     , controlServiceStatus = Nothing
+    , configuration = Nothing
     }
 
 
@@ -139,7 +239,7 @@ setControlServiceStatusTo newStatus device =
 defaultCommand : FlowIOCommand
 defaultCommand =
     { action = Inflate
-    , ports = { port1 = Close, port2 = Close, port3 = Close, port4 = Close, port5 = Close }
+    , ports = { port1 = PortClosed, port2 = PortClosed, port3 = PortClosed, port4 = PortClosed, port5 = PortClosed }
     , pumpPwm = 0
     }
 
@@ -214,6 +314,11 @@ setPumpPwm pwm command =
         Debug.log ("Got PWM value out of range " ++ Debug.toString pwm) command
 
 
+setConfiguration : Maybe Configuration -> FlowIODevice -> FlowIODevice
+setConfiguration maybeConfiguration flowIODevice =
+    { flowIODevice | configuration = maybeConfiguration }
+
+
 
 -- Device Command Types
 
@@ -226,8 +331,8 @@ type FlowIOAction
 
 
 type PortState
-    = Open
-    | Close
+    = PortOpen
+    | PortClosed
 
 
 type Port
@@ -251,9 +356,10 @@ type alias FlowIOCommand =
 
 -- Decoders
 
+
 deviceDetailsDecoder : JD.Decoder DeviceDetails
 deviceDetailsDecoder =
-    JD.map3 (DeviceDetails)
+    JD.map3 DeviceDetails
         (JD.field "name" JD.string)
         (JD.field "id" JD.string)
         (JD.field "services" <| JD.list (JD.string |> JD.map serviceFromString))
@@ -332,10 +438,10 @@ portsDecoder =
     let
         fromBool b =
             if b then
-                Open
+                PortOpen
 
             else
-                Close
+                PortClosed
     in
     JD.field "ports" <|
         JD.map5
@@ -362,41 +468,41 @@ controlCommandDecoder =
         portsDecoder
 
 
-configurationEncoding : Configuration -> Int
+configurationEncoding : Configuration -> String
 configurationEncoding configuration =
     case configuration of
-        Standard ->
-            0
+        StandardConfiguration ->
+            "GENERAL"
 
         InflationSeries ->
-            1
+            "INFLATION_SERIES"
 
         InflationParallel ->
-            2
+            "INFLATION_PARALLEL"
 
         VacuumSeries ->
-            3
+            "VACUUM_SERIES"
 
         VacuumParallel ->
-            4
+            "VACUUM_PARALLEL"
 
 
-configurationDecoding : Int -> Maybe Configuration
+configurationDecoding : String -> Maybe Configuration
 configurationDecoding int =
     case int of
-        0 ->
-            Just Standard
+        "GENERAL" ->
+            Just StandardConfiguration
 
-        1 ->
+        "INFLATION_SERIES" ->
             Just InflationSeries
 
-        2 ->
+        "INFLATION_PARALLEL" ->
             Just InflationParallel
 
-        3 ->
+        "VACUUM_SERIES" ->
             Just VacuumSeries
 
-        4 ->
+        "VACUUM_PARALLEL" ->
             Just VacuumParallel
 
         _ ->
@@ -406,7 +512,7 @@ configurationDecoding int =
 configurationToString : Configuration -> String
 configurationToString configuration =
     case configuration of
-        Standard ->
+        StandardConfiguration ->
             "General"
 
         InflationSeries ->
@@ -446,25 +552,25 @@ encodeCommand inst =
 portFromBool : Bool -> PortState
 portFromBool bool =
     if bool then
-        Open
+        PortOpen
 
     else
-        Close
+        PortClosed
 
 
 isPortOpen : PortState -> Bool
 isPortOpen portState =
-    portState == Open
+    portState == PortOpen
 
 
 togglePort : PortState -> PortState
 togglePort portState =
     case portState of
-        Open ->
-            Close
+        PortOpen ->
+            PortClosed
 
-        Close ->
-            Open
+        PortClosed ->
+            PortOpen
 
 
 encodeAction : FlowIOAction -> JE.Value

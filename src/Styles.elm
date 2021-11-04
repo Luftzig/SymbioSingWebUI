@@ -1,5 +1,6 @@
 module Styles exposing (..)
 
+import Color exposing (Color)
 import Color.Dracula as Dracula
 import Element exposing (Attribute, Color, Element, alignTop, el, fill, height, htmlAttribute, none, paddingXY, px, rgb, rgb255, rgba, shrink, spacing, spacingXY, width)
 import Element.Background as Background
@@ -16,27 +17,39 @@ rust =
     rgb255 183 65 14
 
 
-grey : Color
+grey : Element.Color
 grey =
     rgb 0.5 0.5 0.5
 
 
-lightGrey : Color
+lightGrey : Element.Color
 lightGrey =
     rgb 0.8 0.8 0.8
 
 
-darkGrey : Color
+darkGrey : Element.Color
 darkGrey =
     rgb 0.2 0.2 0.2
 
 
+colorToCssString : Element.Color -> String
+colorToCssString color =
+    color
+        |> Element.toRgb
+        |> Color.fromRgba
+        |> Color.toCssString
+
+
 bottomBorder =
-    Border.widthEach { bottom = 2, left = 0, right = 0, top = 0 }
+    Border.widthEach { bottom = 1, left = 0, right = 0, top = 0 }
 
 
 rightBorder =
-    Border.widthEach { bottom = 0, left = 0, right = 2, top = 0 }
+    Border.widthEach { bottom = 0, left = 0, right = 1, top = 0 }
+
+
+borderWhite =
+    Border.color Dracula.white
 
 
 externClass : String -> Attribute msg

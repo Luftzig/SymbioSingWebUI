@@ -6,7 +6,7 @@ import Browser
 import Color.Dracula as Dracula
 import Dict exposing (Dict)
 import Dict.Extra
-import Element as El exposing (fillPortion, htmlAttribute, indexedTable)
+import Element as El exposing (fillPortion, indexedTable)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events
@@ -19,22 +19,11 @@ import File.Select
 import FlowIO exposing (..)
 import Html exposing (Html)
 import Html.Attributes
-import Html.Events
 import Json.Decode as JD
 import Json.Encode as JE
-import List.Extra
-import Styles exposing (darkGrey, externalClass, fullWidth, inflateIcon, lightGrey, releaseIcon, stopIcon, textField, vacuumIcon)
+import Styles exposing (externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 import Time exposing (Posix)
-
-
-main =
-    Browser.element
-        { init = \() -> ( initModel, Cmd.none )
-        , view = view
-        , update = update
-        , subscriptions = subscriptions
-        }
 
 
 type SchedulerState
@@ -116,9 +105,9 @@ initModel =
     }
 
 
-view : Model -> Html Msg
+view : Model -> El.Element Msg
 view model =
-    El.layout
+    El.el
         [ Font.family [ Font.typeface "Overpass", Font.typeface "Open Sans", Font.typeface "Helvetica", Font.sansSerif ]
         , Font.size 15
         , Font.color Dracula.white
@@ -283,31 +272,31 @@ portsSelection inst onPortChange =
     El.row [ El.padding 2, El.spacing 2 ]
         [ Element.Input.checkbox []
             { label = labelAbove [ Font.size 8 ] <| El.text "Port 1"
-            , checked = inst.ports.port1 == Open
+            , checked = inst.ports.port1 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port1
             }
         , Element.Input.checkbox []
             { label = labelAbove [ Font.size 8 ] <| El.text "Port 2"
-            , checked = inst.ports.port2 == Open
+            , checked = inst.ports.port2 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port2
             }
         , Element.Input.checkbox []
             { label = labelAbove [ Font.size 8 ] <| El.text "Port 3"
-            , checked = inst.ports.port3 == Open
+            , checked = inst.ports.port3 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port3
             }
         , Element.Input.checkbox []
             { label = labelAbove [ Font.size 8 ] <| El.text "Port 4"
-            , checked = inst.ports.port4 == Open
+            , checked = inst.ports.port4 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port4
             }
         , Element.Input.checkbox []
             { label = labelAbove [ Font.size 8 ] <| El.text "Port 5"
-            , checked = inst.ports.port5 == Open
+            , checked = inst.ports.port5 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port5
             }
@@ -800,10 +789,10 @@ update msg model =
             let
                 newState =
                     if checked then
-                        Open
+                        PortOpen
 
                     else
-                        Close
+                        PortClosed
             in
             case p of
                 Port1 ->

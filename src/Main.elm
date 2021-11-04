@@ -4,7 +4,7 @@ import Array exposing (Array)
 import Array.Extra
 import Browser
 import Color.Dracula as Dracula
-import Element as UI
+import Element as El
 import Element.Background as UIBackground
 import Element.Border as UIBorder
 import Element.Font as UIFont
@@ -12,23 +12,11 @@ import Element.Input as UIInput
 import Element.Region as UIRegion
 import FlowIO exposing (..)
 import Html
+import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
 import Json.Decode exposing (Value, decodeValue)
-import Json.Encode
 import List.Extra as LE
 import Scheduler
-import Styles
-    exposing
-        ( bottomBorder
-        , buttonCssIcon
-        , darkGrey
-        , grey
-        , inflateButton
-        , releaseButton
-        , rightBorder
-        , rust
-        , stopButton
-        , vacuumButton
-        )
+import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, releaseButton, rightBorder, rust, stopButton, vacuumButton)
 import Task
 
 
@@ -37,7 +25,16 @@ type alias Model =
     , listeners : List { deviceIndex : Int, to : FlowIOService, shouldListen : Bool }
     , scheduler : Scheduler.Model
     , commandClicked : Maybe { deviceIndex : Int, action : FlowIOAction }
+    , servicesPanel :
+        { services : List ( Int, FlowIOService )
+        , panelState : PanelState
+        }
     }
+
+
+type PanelState
+    = PanelFolded
+    | PanelOpen
 
 
 type Msg
@@ -51,10 +48,15 @@ type Msg
     | SendCommand Int FlowIOCommand
     | ChangeCommandPortState Int FlowIO.Port FlowIO.PortState
     | ChangeCommandPwm Int Int
-      --| ChangeCommandAction Int FlowIO.FlowIOAction
     | ActionClicked Int FlowIOAction
     | ActionReleased
     | SchedulerMessage Scheduler.Msg
+    | DeviceConfigurationChanged { deviceIndex : Int, configuration : Maybe Configuration }
+    | RequestDeviceConfiguration Int
+    | SetDeviceConfiguration Int Configuration
+    | ToggleServicePanelState
+    | AddServiceToPanel Int FlowIOService
+    | RemoveServiceFromPanel Int FlowIOService
 
 
 initModel : Model
@@ -63,6 +65,10 @@ initModel =
     , listeners = []
     , scheduler = Scheduler.initModel
     , commandClicked = Nothing
+    , servicesPanel =
+        { services = []
+        , panelState = PanelOpen
+        }
     }
 
 
@@ -100,6 +106,7 @@ subscriptions model =
     Sub.batch
         ([ deviceStatusChanged DeviceStatusChanged
          , Scheduler.subscriptions model.scheduler |> Sub.map SchedulerMessage
+         , listenToDeviceConfiguration DeviceConfigurationChanged
          ]
             ++ (if shouldListenToControlService then
                     [ controlServiceStatusChanged ControlServiceUpdate ]
@@ -135,6 +142,13 @@ update msg model =
 
                 Nothing ->
                     Debug.log ("Tried to update command to device " ++ String.fromInt deviceIndex ++ " that does not exist, or does not have a control service.") model
+
+        removeDeviceServices deviceIndex =
+            let
+                servicesPanel =
+                    model.servicesPanel
+            in
+            { servicesPanel | services = List.filter (\( index, _ ) -> index /= deviceIndex) servicesPanel.services }
     in
     case msg of
         ConnectToDevice deviceIndex ->
@@ -169,6 +183,7 @@ update msg model =
                         "disconnected" ->
                             ( { model
                                 | listeners = List.filter (\listener -> listener.deviceIndex /= deviceIndex) model.listeners
+                                , servicesPanel = removeDeviceServices deviceIndex
                               }
                                 |> updateDevices (updateDevice deviceIndex (setStatusTo NotConnected))
                             , Cmd.none
@@ -334,6 +349,53 @@ update msg model =
             in
             ( { model | commandClicked = Nothing }, cmd )
 
+        DeviceConfigurationChanged { deviceIndex, configuration } ->
+            Debug.log ( "Device configuration changed " ++ Debug.toString configuration ) <|
+                ( model |> updateDevices (updateDevice deviceIndex (setConfiguration configuration)), Cmd.none )
+
+        RequestDeviceConfiguration deviceIndex ->
+            ( model, getDeviceConfiguration deviceIndex )
+
+        SetDeviceConfiguration deviceIndex configuration ->
+            ( model, setDeviceConfiguration deviceIndex configuration )
+
+        ToggleServicePanelState ->
+            let
+                servicesPanel =
+                    model.servicesPanel
+
+                newState =
+                    case model.servicesPanel.panelState of
+                        PanelFolded ->
+                            PanelOpen
+
+                        PanelOpen ->
+                            PanelFolded
+            in
+            ( { model | servicesPanel = { servicesPanel | panelState = newState } }, Cmd.none )
+
+        AddServiceToPanel deviceIndex flowIOService ->
+            let
+                servicesPanel =
+                    model.servicesPanel
+            in
+            ( { model | servicesPanel = { servicesPanel | services = ( deviceIndex, flowIOService ) :: servicesPanel.services } }, Cmd.none )
+
+        RemoveServiceFromPanel deviceIndex flowIOService ->
+            let
+                servicesPanel =
+                    model.servicesPanel
+            in
+            ( { model
+                | servicesPanel =
+                    { servicesPanel
+                        | services =
+                            List.filter (\( i, s ) -> not (i == deviceIndex && s == flowIOService)) servicesPanel.services
+                    }
+              }
+            , Cmd.none
+            )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -344,79 +406,139 @@ view model =
 
 body : Model -> Html.Html Msg
 body model =
-    UI.layout
-        [ UI.width <| UI.fill
-        , UI.height <| UI.fill
-        , UI.padding 20
+    El.layout
+        [ El.width <| El.fill
+        , El.height <| El.fill
+        , El.padding 20
         , UIFont.color Dracula.white
         , UIFont.family [ UIFont.typeface "Overpass", UIFont.typeface "Open Sans", UIFont.typeface "Helvetica", UIFont.sansSerif ]
         , UIFont.size 15
         , UIBackground.color Dracula.black
         ]
     <|
-        UI.column [ UI.width <| UI.fill, UI.height <| UI.fill ]
+        El.column [ El.width <| El.fill, El.height <| El.fill ]
             [ header
-            , UI.row [ UI.spacing 10, UI.width UI.fill, UI.height <| UI.fillPortion 10, UI.alignTop ]
+            , El.row [ El.spacing 10, El.width El.fill, El.height <| El.fillPortion 10, El.alignTop ]
                 [ displayDeviceList model
-                , displayHardwareStatus model
-                , UI.el [ UI.width <| UI.fillPortion 8, UI.alignTop ] <|
-                    UI.map SchedulerMessage <|
-                        UI.html <|
-                            Scheduler.view model.scheduler
+                , displayServices model
+                , El.el [ El.width <| El.fillPortion 8, El.alignTop ] <|
+                    El.map SchedulerMessage <|
+                        Scheduler.view model.scheduler
                 ]
             , footer
             ]
 
 
-displayDeviceList : Model -> UI.Element Msg
+displayDeviceList : Model -> El.Element Msg
 displayDeviceList model =
     let
-        showDevice : Int -> FlowIODevice -> UI.Element Msg
+        showDevice : Int -> FlowIODevice -> El.Element Msg
         showDevice index device =
-            UI.row [ bottomBorder, UI.width UI.fill, UI.height <| UI.px 56, UI.spacing 5 ]
-                [ UI.el [] <| UI.text (String.fromInt (index + 1) ++ ": ")
+            El.row [ bottomBorder, El.width El.fill, El.spacing 5, El.paddingXY 0 4 ]
+                [ El.el [] <| El.text (String.fromInt (index + 1) ++ ": ")
                 , case device.status of
                     NotConnected ->
-                        UI.row []
-                            [ UIInput.button [ UIRegion.description "Connect" ]
+                        El.row [ fullWidth ]
+                            [ UIInput.button [ El.alignRight, UIRegion.description "Connect" ]
                                 { label = buttonCssIcon "icon-disconnected" "Disconnected", onPress = Just <| ConnectToDevice index }
                             , if index > 0 then
-                                UIInput.button [ UI.alignRight, UIRegion.description "Remove", UIFont.heavy ]
-                                    { label = UI.text "-", onPress = Just <| RemoveDevice index }
+                                UIInput.button [ El.alignLeft, UIRegion.description "Remove", UIFont.heavy ]
+                                    { label = El.text "-", onPress = Just <| RemoveDevice index }
 
                               else
-                                UI.none
+                                El.none
                             ]
 
                     Pending ->
-                        UI.el [ UIRegion.description "waiting connection" ] <| buttonCssIcon "icon-loading" "Awaiting connection"
+                        El.el [ fullWidth, UIRegion.description "waiting connection" ] <|
+                            buttonCssIcon
+                                "icon-loading"
+                                "Awaiting connection"
 
                     Connected ->
-                        UI.column []
-                            [ UI.row [ UI.width UI.fill ]
-                                [ UI.text <| Maybe.withDefault "Unknown" <| Maybe.map .name device.details
-                                , UIInput.button [ UIRegion.description "Disconnect", UI.alignLeft ]
+                        let
+                            serviceButton service =
+                                let
+                                    serviceShown =
+                                        model.servicesPanel.services |> List.member ( index, service )
+
+                                    color =
+                                        if serviceShown then
+                                            Dracula.green
+
+                                        else
+                                            Dracula.white
+
+                                    backgroundColor =
+                                        if serviceShown then
+                                            Dracula.white
+
+                                        else
+                                            Dracula.gray
+                                in
+                                UIInput.button
+                                    [ UIFont.size 11
+                                    , UIFont.color color
+                                    , UIBackground.color backgroundColor
+                                    , UIBorder.rounded 4
+                                    , El.padding 4
+                                    ]
+                                    { onPress =
+                                        Just <|
+                                            if serviceShown then
+                                                RemoveServiceFromPanel index service
+
+                                            else
+                                                AddServiceToPanel index service
+                                    , label = El.text <| serviceToPrettyName service
+                                    }
+                        in
+                        El.column [ El.spacing 5 ]
+                            [ El.row [ El.width El.fill ]
+                                [ El.text <| Maybe.withDefault "Unknown" <| Maybe.map .name device.details
+                                , UIInput.button [ UIRegion.description "Disconnect", El.alignLeft ]
                                     { label = buttonCssIcon "icon-connected" "Connected", onPress = Just <| DisconnectDevice index }
                                 ]
-                            , UI.paragraph [ UIFont.size 10, UI.width UI.fill ]
-                                [ UI.text "id: "
-                                , UI.text <| Maybe.withDefault "Unknown" <| Maybe.map .id device.details
+                            , El.paragraph [ UIFont.size 10, El.width El.fill ]
+                                [ El.text "id: "
+                                , El.text <| Maybe.withDefault "Unknown" <| Maybe.map .id device.details
                                 ]
+                            , case device.details |> Maybe.map .services of
+                                Just services ->
+                                    El.wrappedRow [ El.spacing 4 ] <|
+                                        List.map serviceButton services
+
+                                Nothing ->
+                                    El.el [] <| El.text "No services"
+
+                            --device.details
+                            --    |> Maybe.map .services
+                            --    |> Maybe.withDefault []
+                            --    |>
+                            --El.wrappedRow [El.spacing 4]
                             ]
                 ]
 
         listHeader =
-            UI.el [ UI.width UI.fill ] <| UI.text "Devices"
+            El.el [ El.width El.fill ] <| El.text "Devices"
 
         buttons =
-            UI.row [ UI.width UI.fill ]
+            El.row [ El.width El.fill ]
                 [ UIInput.button []
-                    { label = UI.el [ UIRegion.description "Add Device", UIFont.heavy ] <| UI.text "+"
+                    { label = El.el [ UIRegion.description "Add Device", UIFont.heavy ] <| El.text "+"
                     , onPress = Just AddDevice
                     }
                 ]
     in
-    UI.column [ UI.alignTop, UI.width <| UI.fillPortion 2, UI.spacing 5, rightBorder, UI.padding 5, UI.height UI.fill ]
+    El.column
+        [ El.alignTop
+        , El.width <| El.fillPortion 2
+        , El.spacing 5
+        , borderWhite
+        , rightBorder
+        , El.padding 5
+        , El.height El.fill
+        ]
         (listHeader
             :: (Array.indexedMap
                     showDevice
@@ -427,37 +549,62 @@ displayDeviceList model =
         )
 
 
-displayHardwareStatus : Model -> UI.Element Msg
-displayHardwareStatus { devices } =
+displayServices : Model -> El.Element Msg
+displayServices { devices, servicesPanel } =
     let
-        displayStatus : Int -> FlowIODevice -> Maybe (UI.Element Msg)
-        displayStatus index device =
+        serviceWrapper : Int -> FlowIODevice -> FlowIOService -> El.Element Msg -> El.Element Msg
+        serviceWrapper index device service content =
+            let
+                serviceTitle =
+                    El.column [ El.spacing 4 ]
+                        [ device.details
+                            |> Maybe.map .name
+                            |> Maybe.withDefault "Unknown"
+                            |> (++) (String.fromInt (index + 1) ++ ": ")
+                            |> El.text
+                        , El.text <| serviceToString service
+                        ]
+
+                serviceButtons =
+                    El.row [ El.alignRight ]
+                        [ UIInput.button [ UIRegion.description ("Close service " ++ serviceToString service) ]
+                            { onPress = Just <| RemoveServiceFromPanel index service
+                            , label = El.text "✕"
+                            }
+                        ]
+            in
+            El.column [ fullWidth, bottomBorder, borderWhite, El.spacing 8 ]
+                [ El.row [ fullWidth, bottomBorder, UIBorder.color Dracula.gray ] [ serviceTitle, serviceButtons ]
+                , content
+                ]
+
+        displayControlService : Int -> FlowIODevice -> El.Element Msg
+        displayControlService index device =
             case ( device.status, device.controlServiceStatus ) of
                 ( Connected, Just hardwareStatus ) ->
-                    Just <|
-                        UI.column [ UI.width UI.fill, UIFont.size 16 ]
-                            [ UI.text
-                                ("Status for "
-                                    ++ String.fromInt (index + 1)
-                                    ++ ": "
-                                    ++ (Maybe.map .name device.details |> Maybe.withDefault "")
-                                )
-                            , displayStatusDetails index hardwareStatus
-                            , displayControls index hardwareStatus.command
-                            ]
+                    El.column [ El.width El.fill, UIFont.size 16 ]
+                        [ El.text
+                            ("Status for "
+                                ++ String.fromInt (index + 1)
+                                ++ ": "
+                                ++ (Maybe.map .name device.details |> Maybe.withDefault "")
+                            )
+                        , displayStatusDetailsDetails index hardwareStatus
+                        , displayControls index hardwareStatus.command
+                        ]
 
                 _ ->
-                    Nothing
+                    El.none
 
-        displayControls : Int -> FlowIOCommand -> UI.Element Msg
+        displayControls : Int -> FlowIOCommand -> El.Element Msg
         displayControls deviceIndex command =
-            UI.wrappedRow [ UI.width UI.fill ]
+            El.wrappedRow [ El.width El.fill ]
                 [ pwmSlider (ChangeCommandPwm deviceIndex) command.pumpPwm
                 , actions (ActionClicked deviceIndex) command.action
                 , displayPorts (ChangeCommandPortState deviceIndex) command.ports
                 ]
 
-        pwmSlider : (Int -> Msg) -> Int -> UI.Element Msg
+        pwmSlider : (Int -> Msg) -> Int -> El.Element Msg
         pwmSlider onUpdate currentValue =
             let
                 fullWidth =
@@ -467,32 +614,32 @@ displayHardwareStatus { devices } =
                     toFloat currentValue / 255
             in
             UIInput.slider
-                [ UI.width <| UI.px fullWidth
-                , UI.height <| UI.px 12
-                , UI.behindContent <|
-                    UI.el
-                        [ UI.width UI.fill
-                        , UI.height <| UI.px 8
-                        , UI.padding 2
-                        , UI.centerX
-                        , UI.centerY
+                [ El.width <| El.px fullWidth
+                , El.height <| El.px 12
+                , El.behindContent <|
+                    El.el
+                        [ El.width El.fill
+                        , El.height <| El.px 8
+                        , El.padding 2
+                        , El.centerX
+                        , El.centerY
                         , UIBackground.color grey
                         , UIBorder.rounded 4
                         ]
-                        UI.none
-                , UI.behindContent <|
-                    UI.el
-                        [ UI.width <| UI.px <| round <| (fullWidth - 4) * filled
-                        , UI.height <| UI.px 4
-                        , UI.spacing 2
-                        , UI.alignLeft
-                        , UI.centerY
+                        El.none
+                , El.behindContent <|
+                    El.el
+                        [ El.width <| El.px <| round <| (fullWidth - 4) * filled
+                        , El.height <| El.px 4
+                        , El.spacing 2
+                        , El.alignLeft
+                        , El.centerY
                         , UIBackground.color rust
                         , UIBorder.rounded 2
                         ]
-                        UI.none
+                        El.none
                 ]
-                { label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| UI.text "PWM"
+                { label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| El.text "PWM"
                 , onChange = round >> onUpdate
                 , max = 255
                 , min = 0
@@ -501,27 +648,27 @@ displayHardwareStatus { devices } =
                 , value = filled
                 }
 
-        actions : (FlowIOAction -> Msg) -> FlowIOAction -> UI.Element Msg
+        actions : (FlowIOAction -> Msg) -> FlowIOAction -> El.Element Msg
         actions onMouseDown currentValue =
-            UI.row [ UI.spacing 5, UI.padding 5 ]
+            El.row [ El.spacing 5, El.padding 5 ]
                 [ inflateButton (onMouseDown Inflate) ActionReleased
                 , vacuumButton (onMouseDown Vacuum) ActionReleased
                 , releaseButton (onMouseDown Release) ActionReleased
                 , stopButton (onMouseDown Stop) ActionReleased
                 ]
 
-        displayPorts : (Port -> PortState -> Msg) -> PortsState -> UI.Element Msg
+        displayPorts : (Port -> PortState -> Msg) -> PortsState -> El.Element Msg
         displayPorts onUpdate ports =
             let
                 checkbox label port_ currentValue =
                     UIInput.checkbox []
                         { onChange = portFromBool >> onUpdate port_
-                        , label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| UI.text label
+                        , label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| El.text label
                         , icon = UIInput.defaultCheckbox
                         , checked = isPortOpen currentValue
                         }
             in
-            UI.row [ UI.spacing 5, UI.padding 5 ]
+            El.row [ El.spacing 5, El.padding 5 ]
                 [ checkbox "1" Port1 ports.port1
                 , checkbox "2" Port2 ports.port2
                 , checkbox "3" Port3 ports.port3
@@ -529,16 +676,16 @@ displayHardwareStatus { devices } =
                 , checkbox "5" Port5 ports.port5
                 ]
 
-        displayStatusDetails : Int -> ControlServiceStatus -> UI.Element Msg
-        displayStatusDetails deviceIndex details =
+        displayStatusDetailsDetails : Int -> ControlServiceStatus -> El.Element Msg
+        displayStatusDetailsDetails deviceIndex details =
             let
                 displayPort label status =
-                    UI.el
-                        [ UI.width <| UI.px 24
-                        , UI.height <| UI.px 24
+                    El.el
+                        [ El.width <| El.px 24
+                        , El.height <| El.px 24
                         , UIBorder.width 2
                         , UIBorder.color darkGrey
-                        , UI.padding 2
+                        , El.padding 2
                         , UIBackground.color
                             (if status then
                                 rust
@@ -557,16 +704,16 @@ displayHardwareStatus { devices } =
                         , UIFont.center
                         ]
                     <|
-                        UI.el [ UI.centerY, UI.centerX ] <|
-                            UI.text label
+                        El.el [ El.centerY, El.centerX ] <|
+                            El.text label
             in
-            UI.column [ UI.spacing 2, UI.width UI.fill ]
+            El.column [ El.spacing 2, El.width El.fill ]
                 [ if details.active then
-                    UI.text "Active"
+                    El.text "Active"
 
                   else
-                    UI.text "Inactive"
-                , UI.row [ UI.spacing 2, UI.width UI.fill, UI.centerX ]
+                    El.text "Inactive"
+                , El.row [ El.spacing 2, El.width El.fill, El.centerX ]
                     [ displayPort "In" details.inlet
                     , displayPort "1" details.port1
                     , displayPort "2" details.port2
@@ -575,8 +722,8 @@ displayHardwareStatus { devices } =
                     , displayPort "5" details.port5
                     , displayPort "Out" details.outlet
                     ]
-                , UI.row [ UI.spaceEvenly, UI.width UI.fill ]
-                    [ UI.text
+                , El.row [ El.spaceEvenly, El.width El.fill ]
+                    [ El.text
                         ("Pump 1: "
                             ++ (if details.pump1 then
                                     "On"
@@ -585,7 +732,7 @@ displayHardwareStatus { devices } =
                                     "Off"
                                )
                         )
-                    , UI.text
+                    , El.text
                         ("Pump 2: "
                             ++ (if details.pump2 then
                                     "On"
@@ -597,27 +744,133 @@ displayHardwareStatus { devices } =
                     ]
                 ]
 
+        displayConfigService : Int -> FlowIODevice -> El.Element Msg
+        displayConfigService index device =
+            let
+                configIcon : (String -> Html.Html msg) -> UIInput.OptionState -> El.Element msg
+                configIcon baseIcon state =
+                    let
+                        greenString =
+                            Dracula.green |> colorToCssString
+
+                        whiteString =
+                            Dracula.white |> colorToCssString
+
+                        attributes =
+                            [ El.width <| El.px 32
+                            , El.height <| El.px 32
+                            , UIBorder.rounded 4
+                            ]
+                    in
+                    case state of
+                        UIInput.Idle ->
+                            El.el (attributes ++ [ UIBackground.color Dracula.gray ])
+                                (El.html <| baseIcon whiteString)
+
+                        UIInput.Focused ->
+                            El.el (attributes ++ [ UIBorder.glow Dracula.cyan 3 ]) (El.html <| baseIcon whiteString)
+
+                        UIInput.Selected ->
+                            El.el (attributes ++ [ UIBackground.color Dracula.white ])
+                                (El.html <| baseIcon greenString)
+            in
+            UIInput.radioRow [ fullWidth, El.spaceEvenly, El.padding 4 ]
+                { onChange = \option -> SetDeviceConfiguration index option
+                , label = UIInput.labelAbove [] <| El.text "Device Configuration"
+                , selected = device.configuration
+                , options =
+                    [ UIInput.optionWith StandardConfiguration (configIcon configGeneralIcon)
+                    , UIInput.optionWith InflationSeries (configIcon configInflateSeriesIcon)
+                    , UIInput.optionWith InflationParallel (configIcon configInflateParallelIcon)
+                    , UIInput.optionWith VacuumSeries (configIcon configVacuumSeriesIcon)
+                    , UIInput.optionWith VacuumParallel (configIcon configVacuumParallelIcon)
+                    ]
+                }
+
+        displayBatteryService : Int -> FlowIODevice -> El.Element Msg
+        displayBatteryService index device =
+            El.none
+
         listHeader =
-            UI.el [ UI.width UI.fill ] <| UI.text "Hardware Status"
+            case servicesPanel.panelState of
+                PanelFolded ->
+                    UIInput.button [ El.centerX, UIRegion.description "Open Service Panel" ]
+                        { onPress = Just ToggleServicePanelState
+                        , label = El.el [] <| El.text "▶︎"
+                        }
+
+                PanelOpen ->
+                    El.row [ El.width El.fill ]
+                        [ El.el [ El.centerX, UIFont.underline ] <| El.text "Services"
+                        , UIInput.button [ El.alignRight ]
+                            { label = El.el [] <| El.text "◀︎"
+                            , onPress = Just ToggleServicePanelState
+                            }
+                        ]
+
+        displayServicePanel : Int -> FlowIOService -> El.Element Msg
+        displayServicePanel deviceIndex service =
+            let
+                maybeDevice =
+                    devices |> Array.get deviceIndex
+
+                hasService =
+                    maybeDevice
+                        |> Maybe.andThen .details
+                        |> Maybe.map .services
+                        |> Maybe.map (List.member service)
+                        |> Maybe.withDefault False
+            in
+            case ( maybeDevice, hasService ) of
+                ( Nothing, _ ) ->
+                    El.none
+
+                ( _, False ) ->
+                    El.none
+
+                ( Just device, True ) ->
+                    serviceWrapper deviceIndex device service <|
+                        case service of
+                            ControlService ->
+                                displayControlService deviceIndex device
+
+                            ConfigService ->
+                                displayConfigService deviceIndex device
+
+                            BatteryService ->
+                                displayBatteryService deviceIndex device
+
+                            UnknownService string ->
+                                El.none
     in
-    UI.column
-        [ UI.alignTop
-        , UI.width <| UI.fillPortion 2
-        , UI.spacing 5
+    El.column
+        [ El.alignTop
         , rightBorder
-        , UI.padding 5
-        , UI.height UI.fill
+        , borderWhite
+        , if servicesPanel.panelState == PanelOpen then
+            El.width <| El.fillPortion 2
+
+          else
+            El.width <| El.px 40
+        , El.spacing 5
+        , El.padding 5
+        , El.height El.fill
         ]
         (listHeader
-            :: (Array.Extra.indexedMapToList displayStatus devices |> List.filterMap identity)
+            :: (if servicesPanel.panelState == PanelOpen then
+                    servicesPanel.services |> List.map (\( index, service ) -> displayServicePanel index service)
+
+                else
+                    []
+               )
         )
 
 
-header : UI.Element Msg
+header : El.Element Msg
 header =
-    UI.el [ UI.centerX, UI.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <| UI.text "FlowIO Scheduler"
+    El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <| El.text "FlowIO Scheduler"
 
 
-footer : UI.Element Msg
+footer : El.Element Msg
 footer =
-    UI.el [ UI.alignBottom, UI.height <| UI.px 24 ] UI.none
+    El.el [ El.alignBottom, El.height <| El.px 24 ] El.none
