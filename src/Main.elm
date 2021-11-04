@@ -16,7 +16,19 @@ import Json.Decode exposing (Value, decodeValue)
 import Json.Encode
 import List.Extra as LE
 import Scheduler
-import Styles exposing (bottomBorder, buttonCssIcon, darkGrey, grey, inflateButton, releaseButton, rightBorder, rust, stopButton, vacuumButton)
+import Styles
+    exposing
+        ( bottomBorder
+        , buttonCssIcon
+        , darkGrey
+        , grey
+        , inflateButton
+        , releaseButton
+        , rightBorder
+        , rust
+        , stopButton
+        , vacuumButton
+        )
 import Task
 
 
@@ -24,6 +36,7 @@ type alias Model =
     { devices : Array FlowIODevice
     , listeners : List { deviceIndex : Int, to : FlowIOService, shouldListen : Bool }
     , scheduler : Scheduler.Model
+    , commandClicked : Maybe { deviceIndex : Int, action : FlowIOAction }
     }
 
 
@@ -38,7 +51,9 @@ type Msg
     | SendCommand Int FlowIOCommand
     | ChangeCommandPortState Int FlowIO.Port FlowIO.PortState
     | ChangeCommandPwm Int Int
-    | ChangeCommandAction Int FlowIO.FlowIOAction
+      --| ChangeCommandAction Int FlowIO.FlowIOAction
+    | ActionClicked Int FlowIOAction
+    | ActionReleased
     | SchedulerMessage Scheduler.Msg
 
 
@@ -47,6 +62,7 @@ initModel =
     { devices = Array.empty
     , listeners = []
     , scheduler = Scheduler.initModel
+    , commandClicked = Nothing
     }
 
 
@@ -280,7 +296,14 @@ update msg model =
             in
             ( updateCommand deviceIndex newCommand, Cmd.none )
 
-        ChangeCommandAction deviceIndex action ->
+        SchedulerMessage message ->
+            let
+                ( scheduler, cmd ) =
+                    Scheduler.update message model.scheduler
+            in
+            ( { model | scheduler = scheduler }, Cmd.map SchedulerMessage cmd )
+
+        ActionClicked deviceIndex action ->
             let
                 command : FlowIOCommand
                 command =
@@ -292,14 +315,24 @@ update msg model =
                     command
                         |> setAction action
             in
-            ( updateCommand deviceIndex newCommand, sendMessage <| SendCommand deviceIndex newCommand )
+            ( updateCommand deviceIndex newCommand
+                |> (\model_ ->
+                        { model_ | commandClicked = Just { deviceIndex = deviceIndex, action = action } }
+                   )
+            , sendMessage <| SendCommand deviceIndex newCommand
+            )
 
-        SchedulerMessage message ->
+        ActionReleased ->
             let
-                ( scheduler, cmd ) =
-                    Scheduler.update message model.scheduler
+                cmd =
+                    case model.commandClicked of
+                        Just { deviceIndex } ->
+                            stopAll deviceIndex
+
+                        Nothing ->
+                            Cmd.none
             in
-            ( { model | scheduler = scheduler }, Cmd.map SchedulerMessage cmd )
+            ( { model | commandClicked = Nothing }, cmd )
 
 
 view : Model -> Browser.Document Msg
@@ -420,7 +453,7 @@ displayHardwareStatus { devices } =
         displayControls deviceIndex command =
             UI.wrappedRow [ UI.width UI.fill ]
                 [ pwmSlider (ChangeCommandPwm deviceIndex) command.pumpPwm
-                , actions (ChangeCommandAction deviceIndex) command.action
+                , actions (ActionClicked deviceIndex) command.action
                 , displayPorts (ChangeCommandPortState deviceIndex) command.ports
                 ]
 
@@ -469,12 +502,12 @@ displayHardwareStatus { devices } =
                 }
 
         actions : (FlowIOAction -> Msg) -> FlowIOAction -> UI.Element Msg
-        actions onUpdate currentValue =
+        actions onMouseDown currentValue =
             UI.row [ UI.spacing 5, UI.padding 5 ]
-                [ inflateButton (Just <| onUpdate Inflate)
-                , vacuumButton (Just <| onUpdate Vacuum)
-                , releaseButton (Just <| onUpdate Release)
-                , stopButton (Just <| onUpdate Stop)
+                [ inflateButton (onMouseDown Inflate) ActionReleased
+                , vacuumButton (onMouseDown Vacuum) ActionReleased
+                , releaseButton (onMouseDown Release) ActionReleased
+                , stopButton (onMouseDown Stop) ActionReleased
                 ]
 
         displayPorts : (Port -> PortState -> Msg) -> PortsState -> UI.Element Msg

@@ -58,4 +58,15 @@ app.ports.sendCommand.subscribe(( {deviceIndex, command} ) => {
     return
   }
   device.services.control.sendCommand(command)
+    .then(_ => console.debug("Command", command, "sent to device", deviceIndex))
+})
+
+app.ports.stopAll.subscribe((deviceIndex) => {
+  const device /* : FlowIo */ = flowIoDevices[deviceIndex]
+  if (device == null) {
+    console.error("Requested to send command to device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
+    return
+  }
+  device.services.control.stopAllActions()
+    .then(_ => console.debug("Stop all sent to device", deviceIndex))
 })

@@ -27,6 +27,8 @@ port listenToControlService : Int -> Cmd msg
 port sendCommand : { deviceIndex : Int, command : JE.Value } -> Cmd msg
 
 
+port stopAll : Int -> Cmd msg
+
 
 -- FlowIODevice types
 

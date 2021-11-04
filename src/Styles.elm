@@ -106,40 +106,46 @@ textField attrs { isDisabled, label, text, onChange, placeholder, onChangeDisabl
             }
 
 
+clickAndHoldButton : msg -> msg -> Element msg -> String -> Element msg
+clickAndHoldButton onMouseDown onMouseUp label description =
+    Input.button
+        [ Region.description description
+        , Element.Events.onMouseDown onMouseDown
+        , Element.Events.onMouseUp onMouseUp
+        ]
+        { label = label, onPress = Nothing }
+
+
 inflateIcon =
     buttonCssIcon "icon-inflate" "Inflate"
-
-
-inflateButton : Maybe msg -> Element msg
-inflateButton action =
-    Input.button [ Region.description "Inflate" ] { label = inflateIcon, onPress = action }
 
 
 vacuumIcon =
     buttonCssIcon "icon-vacuum" "Vacuum"
 
 
-vacuumButton : Maybe msg -> Element msg
-vacuumButton action =
-    Input.button [ Region.description "Vacuum" ] { label = vacuumIcon, onPress = action }
-
-
 releaseIcon =
     buttonCssIcon "icon-release" "Release"
-
-
-releaseButton : Maybe msg -> Element msg
-releaseButton action =
-    Input.button [ Region.description "Release" ] { label = releaseIcon, onPress = action }
 
 
 stopIcon =
     buttonCssIcon "icon-stop" "Stop"
 
 
-stopButton : Maybe msg -> Element msg
-stopButton action =
-    Input.button [ Region.description "Stop" ] { label = stopIcon, onPress = action }
+inflateButton onMouseDown onMouseUp =
+    clickAndHoldButton onMouseDown onMouseUp inflateIcon "Inflate"
+
+
+vacuumButton onMouseDown onMouseUp =
+    clickAndHoldButton onMouseDown onMouseUp vacuumIcon "Vacuum"
+
+
+releaseButton onMouseDown onMouseUp =
+    clickAndHoldButton onMouseDown onMouseUp releaseIcon "Release"
+
+
+stopButton onMouseDown onMouseUp =
+    clickAndHoldButton onMouseDown onMouseUp stopIcon "Stop"
 
 
 externalClass : String -> Element.Attribute msg
