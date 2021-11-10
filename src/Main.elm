@@ -57,6 +57,9 @@ type Msg
     | ToggleServicePanelState
     | AddServiceToPanel Int FlowIOService
     | RemoveServiceFromPanel Int FlowIOService
+    | DevicePowerOffStatusChange Int PowerOffStatus
+    | SendNewPowerOffStatus Int PowerOffStatus
+    | NoAction String
 
 
 initModel : Model
@@ -104,12 +107,13 @@ subscriptions model =
                 model.listeners
     in
     Sub.batch
-        ([ deviceStatusChanged DeviceStatusChanged
+        ([ listenToDeviceStatus DeviceStatusChanged
          , Scheduler.subscriptions model.scheduler |> Sub.map SchedulerMessage
          , listenToDeviceConfiguration DeviceConfigurationChanged
+         , listenToPowerOffStatus DevicePowerOffStatusChange
          ]
             ++ (if shouldListenToControlService then
-                    [ controlServiceStatusChanged ControlServiceUpdate ]
+                    [ listenToDeviceControlStatus ControlServiceUpdate ]
 
                 else
                     []
@@ -342,7 +346,7 @@ update msg model =
                 cmd =
                     case model.commandClicked of
                         Just { deviceIndex } ->
-                            stopAll deviceIndex
+                            sendStopAll deviceIndex
 
                         Nothing ->
                             Cmd.none
@@ -350,14 +354,13 @@ update msg model =
             ( { model | commandClicked = Nothing }, cmd )
 
         DeviceConfigurationChanged { deviceIndex, configuration } ->
-            Debug.log ( "Device configuration changed " ++ Debug.toString configuration ) <|
-                ( model |> updateDevices (updateDevice deviceIndex (setConfiguration configuration)), Cmd.none )
+            ( model |> updateDevices (updateDevice deviceIndex (setConfiguration configuration)), Cmd.none )
 
         RequestDeviceConfiguration deviceIndex ->
-            ( model, getDeviceConfiguration deviceIndex )
+            ( model, queryDeviceConfiguration deviceIndex )
 
         SetDeviceConfiguration deviceIndex configuration ->
-            ( model, setDeviceConfiguration deviceIndex configuration )
+            ( model, sendDeviceConfiguration deviceIndex configuration )
 
         ToggleServicePanelState ->
             let
@@ -395,6 +398,17 @@ update msg model =
               }
             , Cmd.none
             )
+
+        DevicePowerOffStatusChange deviceIndex powerOffStatus ->
+            ( model |> updateDevices (updateDevice deviceIndex (setPowerOffStatus <| Just powerOffStatus))
+            , Cmd.none
+            )
+
+        SendNewPowerOffStatus deviceIndex powerOffStatus ->
+            ( model, sendPowerOffStatus deviceIndex powerOffStatus )
+
+        NoAction explanation ->
+            ( Debug.log ("Received a no action Msg: " ++ explanation) model, Cmd.none )
 
 
 view : Model -> Browser.Document Msg
@@ -547,6 +561,13 @@ displayDeviceList model =
                )
             ++ [ buttons ]
         )
+
+
+type PowerOffServiceSelectOptions
+    = TurnOff
+    | DisableTimer
+    | SetTimer
+    | UnsupportedOption
 
 
 displayServices : Model -> El.Element Msg
@@ -791,19 +812,125 @@ displayServices { devices, servicesPanel } =
         displayBatteryService index device =
             El.none
 
+        displayPowerOffService : Int -> FlowIODevice -> El.Element Msg
+        displayPowerOffService index device =
+            let
+                statusToOption =
+                    case device.powerOffServiceStatus of
+                        Just DeviceOff ->
+                            Just TurnOff
+
+                        Just PowerOffTimerDisabled ->
+                            Just DisableTimer
+
+                        Just (PowerOffMinutesRemaining _) ->
+                            Just SetTimer
+
+                        _ ->
+                            Nothing
+
+                optionAttrs =
+                    [ El.centerY
+                    , UIBorder.rounded 2
+                    , UIBorder.width 1
+                    , UIBorder.color Dracula.purple
+                    ]
+
+                showOption label =
+                    El.el optionAttrs <|
+                        El.text label
+
+                minutesRemainingOption : UIInput.OptionState -> El.Element Msg
+                minutesRemainingOption optionState =
+                    case optionState of
+                        UIInput.Idle ->
+                            showOption "Set Timer"
+
+                        UIInput.Focused ->
+                            showOption "Set Timer"
+
+                        UIInput.Selected ->
+                            let
+                                minutes =
+                                    minutesRemaining |> Maybe.map toFloat |> Maybe.withDefault 0
+                            in
+                            El.row (fullWidth :: optionAttrs)
+                                [ UIInput.slider [ El.width <| El.px 80 ]
+                                    { label = UIInput.labelRight [] <| El.text (String.fromFloat minutes ++ " minutes")
+                                    , onChange =
+                                        \value ->
+                                            SendNewPowerOffStatus index
+                                                (PowerOffMinutesRemaining <| round value)
+                                    , value = minutes
+                                    , min = 1
+                                    , max = 30
+                                    , step = Just 1
+                                    , thumb = UIInput.defaultThumb
+                                    }
+                                ]
+
+                minutesRemaining =
+                    device.powerOffServiceStatus
+                        |> Maybe.andThen
+                            (\status ->
+                                case status of
+                                    PowerOffMinutesRemaining min ->
+                                        Just min
+
+                                    _ ->
+                                        Nothing
+                            )
+
+                onChange option =
+                    case option of
+                        TurnOff ->
+                            SendNewPowerOffStatus index DeviceOff
+
+                        DisableTimer ->
+                            SendNewPowerOffStatus index PowerOffTimerDisabled
+
+                        SetTimer ->
+                            SendNewPowerOffStatus index
+                                (minutesRemaining
+                                    |> Maybe.map PowerOffMinutesRemaining
+                                    |> Maybe.withDefault (PowerOffMinutesRemaining 5)
+                                )
+
+                        UnsupportedOption ->
+                            NoAction "Selected unsupported action"
+
+                selector =
+                    UIInput.radioRow [El.spaceEvenly, fullWidth]
+                        { onChange = onChange
+                        , label = UIInput.labelAbove [] <| El.text "Power-off Status"
+                        , selected = statusToOption
+                        , options =
+                            [ UIInput.option TurnOff <| showOption "Off"
+                            , UIInput.option DisableTimer <| showOption "Disabled"
+                            , UIInput.optionWith SetTimer minutesRemainingOption
+                            ]
+                        }
+            in
+            selector
+
         listHeader =
             case servicesPanel.panelState of
                 PanelFolded ->
-                    UIInput.button [ El.centerX, UIRegion.description "Open Service Panel" ]
-                        { onPress = Just ToggleServicePanelState
-                        , label = El.el [] <| El.text "▶︎"
-                        }
+                    El.column [ fullWidth ]
+                        [ UIInput.button [ El.alignRight, El.paddingXY 5 0, UIRegion.description "Open Service Panel" ]
+                            { onPress = Just ToggleServicePanelState
+                            , label = El.el [] <| El.text "▶︎"
+                            }
+                        , El.el [ El.width <| El.shrink, El.moveDown 40, El.moveLeft 10 ] <|
+                            El.el [ El.rotate <| Basics.degrees 90 ] <|
+                                El.text "Services"
+                        ]
 
                 PanelOpen ->
                     El.row [ El.width El.fill ]
                         [ El.el [ El.centerX, UIFont.underline ] <| El.text "Services"
                         , UIInput.button [ El.alignRight ]
-                            { label = El.el [] <| El.text "◀︎"
+                            { label = El.el [ El.spacing 5 ] <| El.text "◀︎"
                             , onPress = Just ToggleServicePanelState
                             }
                         ]
@@ -842,6 +969,9 @@ displayServices { devices, servicesPanel } =
 
                             UnknownService string ->
                                 El.none
+
+                            PowerOffService ->
+                                displayPowerOffService deviceIndex device
     in
     El.column
         [ El.alignTop
@@ -851,7 +981,7 @@ displayServices { devices, servicesPanel } =
             El.width <| El.fillPortion 2
 
           else
-            El.width <| El.px 40
+            El.width <| El.maximum 40 El.shrink
         , El.spacing 5
         , El.padding 5
         , El.height El.fill

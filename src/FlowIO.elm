@@ -11,25 +11,30 @@ port module FlowIO exposing
     , Port(..)
     , PortState(..)
     , PortsState
+    , PowerOffStatus(..)
     , commandActionDecoder
     , connectToDevice
     , controlCommandDecoder
-    , controlServiceStatusChanged
     , controlServiceStatusDecoder
     , createDevice
     , defaultCommand
     , defaultDevice
     , deviceDetailsDecoder
-    , deviceStatusChanged
     , disconnectDevice
     , encodeCommand
-    , getDeviceConfiguration
     , getLastCommand
     , isPortOpen
     , listenToControlService
     , listenToDeviceConfiguration
+    , listenToDeviceControlStatus
+    , listenToDeviceStatus
+    , listenToPowerOffStatus
     , portFromBool
+    , queryDeviceConfiguration
+    , queryPowerOffStatus
     , sendCommand
+    , sendDeviceConfiguration
+    , sendStopAll
     , serviceFromString
     , serviceToPrettyName
     , serviceToString
@@ -37,14 +42,12 @@ port module FlowIO exposing
     , setConfiguration
     , setControlServiceStatusTo
     , setDetailsTo
-    , setDeviceConfiguration
     , setLastCommand
     , setPort
     , setPumpPwm
     , setStatusTo
-    , stopAll
     , updateCommandFromStatus
-    )
+    , setPowerOffStatus, sendPowerOffStatus)
 
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
@@ -64,10 +67,10 @@ port connectToDevice : Int -> Cmd msg
 port disconnectDevice : Int -> Cmd msg
 
 
-port deviceStatusChanged : ({ deviceIndex : Int, status : String, details : Maybe JE.Value } -> msg) -> Sub msg
+port listenToDeviceStatus : ({ deviceIndex : Int, status : String, details : Maybe JE.Value } -> msg) -> Sub msg
 
 
-port controlServiceStatusChanged : ({ deviceIndex : Int, status : JE.Value } -> msg) -> Sub msg
+port listenToDeviceControlStatus : ({ deviceIndex : Int, status : JE.Value } -> msg) -> Sub msg
 
 
 port listenToControlService : Int -> Cmd msg
@@ -76,10 +79,14 @@ port listenToControlService : Int -> Cmd msg
 port sendCommand : { deviceIndex : Int, command : JE.Value } -> Cmd msg
 
 
-port stopAll : Int -> Cmd msg
+port sendStopAll : Int -> Cmd msg
 
 
-port getDeviceConfiguration : Int -> Cmd msg
+
+-- Configuration service ports
+
+
+port queryDeviceConfiguration : Int -> Cmd msg
 
 
 port listenToDeviceConfiguration_ : ({ deviceIndex : Int, configuration : String } -> msg) -> Sub msg
@@ -96,22 +103,58 @@ listenToDeviceConfiguration createMessage =
         )
 
 
-port setDeviceConfiguration_ : { deviceIndex : Int, configuration : String } -> Cmd msg
+port sendDeviceConfiguration_ : { deviceIndex : Int, configuration : String } -> Cmd msg
 
 
-setDeviceConfiguration : Int -> Configuration -> Cmd msg
-setDeviceConfiguration index configuration =
-    setDeviceConfiguration_ { deviceIndex = index, configuration = configurationEncoding configuration }
+sendDeviceConfiguration : Int -> Configuration -> Cmd msg
+sendDeviceConfiguration index configuration =
+    sendDeviceConfiguration_ { deviceIndex = index, configuration = configurationEncoding configuration }
+
+
+
+-- Power off service ports
+
+
+port listenToPowerOffStatus_ : ({ deviceIndex : Int, status : JE.Value } -> msg) -> Sub msg
+
+
+listenToPowerOffStatus : (Int -> PowerOffStatus -> msg) -> Sub msg
+listenToPowerOffStatus toMessage =
+    listenToPowerOffStatus_
+        (\{ deviceIndex, status } ->
+            case JD.decodeValue powerOffStatusDecoder status of
+                Ok resolvedStatus ->
+                    toMessage deviceIndex resolvedStatus
+
+                Err error ->
+                    toMessage deviceIndex PowerOffStatusUnknown
+        )
+
+
+port queryPowerOffStatus : Int -> Cmd msg
+
+
+port sendPowerOffStatus_ : { deviceIndex : Int, status : JE.Value } -> Cmd msg
+
+
+sendPowerOffStatus : Int -> PowerOffStatus -> Cmd msg
+sendPowerOffStatus index status =
+    sendPowerOffStatus_ { deviceIndex = index, status = encodePowerOffStatus status }
 
 
 
 -- FlowIODevice types
+
+{- TODO: Should I wrap all the service in a type to represent their status?
+possible values are probably: not supported, expecting update, updated? We also have local value versus remote one.
+-}
 
 
 type alias FlowIODevice =
     { status : FlowIOStatus
     , details : Maybe DeviceDetails
     , controlServiceStatus : Maybe ControlServiceStatus
+    , powerOffServiceStatus : Maybe PowerOffStatus
     , configuration : Maybe Configuration
     }
 
@@ -134,7 +177,15 @@ type FlowIOService
     = ControlService
     | ConfigService
     | BatteryService
+    | PowerOffService
     | UnknownService String
+
+
+type PowerOffStatus
+    = DeviceOff
+    | PowerOffTimerDisabled
+    | PowerOffMinutesRemaining Int
+    | PowerOffStatusUnknown
 
 
 serviceToString : FlowIOService -> String
@@ -152,6 +203,9 @@ serviceToString service =
         BatteryService ->
             "battery-service"
 
+        PowerOffService ->
+            "power-off-service"
+
 
 serviceToPrettyName : FlowIOService -> String
 serviceToPrettyName service =
@@ -168,6 +222,9 @@ serviceToPrettyName service =
         BatteryService ->
             "Battery"
 
+        PowerOffService ->
+            "Shutdown Timer"
+
 
 serviceFromString : String -> FlowIOService
 serviceFromString string =
@@ -180,6 +237,9 @@ serviceFromString string =
 
         "battery-service" ->
             BatteryService
+
+        "power-off-service" ->
+            PowerOffService
 
         other ->
             UnknownService other
@@ -218,6 +278,7 @@ defaultDevice =
     , details = Nothing
     , controlServiceStatus = Nothing
     , configuration = Nothing
+    , powerOffServiceStatus = Nothing
     }
 
 
@@ -317,6 +378,11 @@ setPumpPwm pwm command =
 setConfiguration : Maybe Configuration -> FlowIODevice -> FlowIODevice
 setConfiguration maybeConfiguration flowIODevice =
     { flowIODevice | configuration = maybeConfiguration }
+
+
+setPowerOffStatus : Maybe PowerOffStatus -> FlowIODevice -> FlowIODevice
+setPowerOffStatus maybePowerOffStatus flowIODevice =
+    { flowIODevice | powerOffServiceStatus = maybePowerOffStatus }
 
 
 
@@ -529,6 +595,37 @@ configurationToString configuration =
 
 
 
+{-
+   export type PowerOffStatus
+       = { kind: "off" }
+       | { kind: "disabled" }
+       | { kind: "remaining", minutes: number }
+
+-}
+
+
+powerOffStatusDecoder : JD.Decoder PowerOffStatus
+powerOffStatusDecoder =
+    let
+        decodeKind kind =
+            case kind of
+                "off" ->
+                    JD.succeed DeviceOff
+
+                "disabled" ->
+                    JD.succeed PowerOffTimerDisabled
+
+                "remaining" ->
+                    JD.field "minutes" JD.int
+                        |> JD.map PowerOffMinutesRemaining
+
+                other ->
+                    JD.fail ("Unknown kind '" ++ other ++ "'")
+    in
+    JD.field "kind" JD.string |> JD.andThen decodeKind
+
+
+
 -- Encoders
 
 
@@ -591,3 +688,29 @@ encodeAction action =
                     "stop"
     in
     JE.string symbol
+
+
+encodePowerOffStatus : PowerOffStatus -> JE.Value
+encodePowerOffStatus powerOffStatus =
+    {-
+       export type PowerOffStatus
+           = { kind: "off" }
+           | { kind: "disabled" }
+           | { kind: "remaining", minutes: number }
+
+    -}
+    case powerOffStatus of
+        DeviceOff ->
+            JE.object [ ( "kind", JE.string "off" ) ]
+
+        PowerOffTimerDisabled ->
+            JE.object [ ( "kind", JE.string "disabled" ) ]
+
+        PowerOffMinutesRemaining minutes ->
+            JE.object
+                [ ( "kind", JE.string "remaining" )
+                , ( "minutes", JE.int minutes )
+                ]
+
+        PowerOffStatusUnknown ->
+            Debug.log "PowerOffStatusUnknown should not be sent to JS service!" <| JE.null

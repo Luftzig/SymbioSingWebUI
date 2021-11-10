@@ -10,7 +10,11 @@ const flowIoDevices /*: FlowIo[]*/ = []
 let app = Elm.Main.init({node: document.getElementById('app-root')});
 
 app.ports.createDevice.subscribe(() => {
-  const flowIo = new FlowIo({control: new ControlService(), config: new ConfigService(), powerOff: new PowerOffService()})
+  const flowIo = new FlowIo({
+    control: new ControlService(),
+    config: new ConfigService(),
+    powerOff: new PowerOffService()
+  })
   flowIoDevices.push(flowIo)
 })
 
@@ -27,9 +31,9 @@ app.ports.connectToDevice.subscribe(deviceIndex => {
         status: 'connected',
         details: {name: device.name, id: device.id, services: Object.values(device.services).map(s => s.id)}
       }
-      app.ports.deviceStatusChanged.send(deviceConnectionStatus)
+      app.ports.listenToDeviceStatus.send(deviceConnectionStatus)
       device.connection.subscribe("disconnected", (_) => {
-        app.ports.deviceStatusChanged.send({
+        app.ports.listenToDeviceStatus.send({
           deviceIndex,
           status: 'disconnected',
           details: null
@@ -40,11 +44,16 @@ app.ports.connectToDevice.subscribe(deviceIndex => {
       device.services.config.getConfiguration().then(config =>
         app.ports.listenToDeviceConfiguration_.send({deviceIndex, configuration: config})
       )
-
+      device.services.powerOff.getRemainingTime().then(status =>
+        app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
+      )
+      device.services.powerOff.onStatusChanged(status =>
+        app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
+      )
     })
     .catch((e) => {
       console.log(`Failed to connect to device ${deviceIndex} due to:`, e)
-      app.ports.deviceStatusChanged.send({deviceIndex, status: 'disconnected', details: null})
+      app.ports.listenToDeviceStatus.send({deviceIndex, status: 'disconnected', details: null})
     })
 })
 
@@ -56,7 +65,7 @@ app.ports.listenToControlService.subscribe(deviceIndex => {
     return
   }
   device.services.control.onStatusUpdated(status =>
-    app.ports.controlServiceStatusChanged.send({deviceIndex, status})
+    app.ports.listenToDeviceControlStatus.send({deviceIndex, status})
   )
 })
 
@@ -70,7 +79,7 @@ app.ports.sendCommand.subscribe(({deviceIndex, command}) => {
     .then(_ => console.debug("Command", command, "sent to device", deviceIndex))
 })
 
-app.ports.stopAll.subscribe((deviceIndex) => {
+app.ports.sendStopAll.subscribe((deviceIndex) => {
   const device /* : FlowIo */ = flowIoDevices[deviceIndex]
   if (device == null) {
     console.error("Requested to send command to device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
@@ -82,7 +91,7 @@ app.ports.stopAll.subscribe((deviceIndex) => {
 
 /* Configuration Service */
 
-app.ports.getDeviceConfiguration.subscribe(deviceIndex => {
+app.ports.queryDeviceConfiguration.subscribe(deviceIndex => {
   const device /* : FlowIo */ = flowIoDevices[deviceIndex]
   if (device == null) {
     console.error("Requested configuration of device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
@@ -99,7 +108,7 @@ app.ports.getDeviceConfiguration.subscribe(deviceIndex => {
   )
 })
 
-app.ports.setDeviceConfiguration_.subscribe(({deviceIndex, configuration}) => {
+app.ports.sendDeviceConfiguration_.subscribe(({deviceIndex, configuration}) => {
   const device /* : FlowIo */ = flowIoDevices[deviceIndex]
   if (device == null) {
     console.error("Requested configuration of device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
@@ -117,4 +126,33 @@ app.ports.setDeviceConfiguration_.subscribe(({deviceIndex, configuration}) => {
     .then(configuration =>
       app.ports.listenToDeviceConfiguration_.send({deviceIndex, configuration})
     )
+})
+
+/* Power off service */
+app.ports.sendPowerOffStatus_.subscribe(({deviceIndex, status}) => {
+  function convertToArgument(newStatus /* : PowerOffStatus */) {
+    switch (newStatus.kind) {
+      case "off":
+        return "off"
+      case "disabled":
+        return "disabled"
+      case "remaining":
+        return newStatus.minutes
+    }
+  }
+
+  const device /* : FlowIo */ = flowIoDevices[deviceIndex]
+  if (device == null) {
+    console.error("Requested power-off service of device number", deviceIndex, "but there is no such device." +
+      " Devices:", flowIoDevices)
+    return
+  }
+  const powerOffService /* : PowerOffService | undefined */ = device.services.powerOff
+  if (powerOffService == null) {
+    console.error("Requested to set power-off service of device number", deviceIndex, "but it has no power-off" +
+      " service." +
+      " Available service are:", Object.keys(device.service))
+    return
+  }
+  powerOffService.setTimer(convertToArgument(status))
 })

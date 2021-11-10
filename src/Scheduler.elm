@@ -170,7 +170,14 @@ actionSelection command onChange =
         renderOption icon state =
             case state of
                 Element.Input.Idle ->
-                    El.el [ El.centerY, Background.color Dracula.red, Border.rounded 2, Border.width 1, Border.color Dracula.purple ] icon
+                    El.el
+                        [ El.centerY
+                        , Background.color Dracula.red
+                        , Border.rounded 2
+                        , Border.width 1
+                        , Border.color Dracula.purple
+                        ]
+                        icon
 
                 Element.Input.Focused ->
                     El.el
@@ -190,7 +197,13 @@ actionSelection command onChange =
                         , externalClass "svg-red"
                         , El.centerY
                         , El.behindContent <|
-                            El.el [ El.width El.fill, El.height El.fill, Background.color Dracula.green, Border.rounded 15 ] El.none
+                            El.el
+                                [ El.width El.fill
+                                , El.height El.fill
+                                , Background.color Dracula.green
+                                , Border.rounded 15
+                                ]
+                                El.none
                         ]
                         icon
     in
