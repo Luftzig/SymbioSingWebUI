@@ -2,7 +2,8 @@
   "name": "flowio-webapp-multi-device-scheduler",
   "version": "1.0.0",
   "description": "FlowIO WebApp built with modern web technologies supporting scheduling commands on several devices in parallel",
-  "source": "src/index.html",
+  "source": "src",
+  "main": "src/index.js",
   "author": "Yoav Luft <luft@kth.se>, Ali Shtarbanov <softrobotics.io@gmail.com>",
   "license": "Propietary",
   "private": true,
@@ -12,15 +13,16 @@
     "not dead"
   ],
   "scripts": {
-    "start": "parcel",
-    "build": "parcel build"
+    "start": "node ./build.js --watch",
+    "build": "node ./build.js"
   },
   "dependencies": {
     "flow-io-web-lib": "../flow-io-web-lib"
   },
   "devDependencies": {
-    "@parcel/transformer-elm": "2.0.0-rc.0",
     "elm": "^0.19.1-5",
-    "parcel": "^2.0.0-rc.0"
+    "esbuild": "^0.13.13",
+    "esbuild-plugin-copy": "^0.2.0",
+    "esbuild-plugin-elm": "^0.0.6"
   }
 }
