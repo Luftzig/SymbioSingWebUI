@@ -12,7 +12,8 @@
     "not dead"
   ],
   "scripts": {
-    "start": "node ./build.js --watch",
+    "start": "node ./serve.js",
+    "watch": "node ./build.js --watch",
     "build": "node ./build.js"
   },
   "dependencies": {
