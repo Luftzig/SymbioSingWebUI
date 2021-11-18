@@ -2,12 +2,12 @@ module Styles exposing (..)
 
 import Color exposing (Color)
 import Color.Dracula as Dracula
-import Element exposing (Attribute, Color, Element, alignTop, el, fill, height, htmlAttribute, none, paddingXY, px, rgb, rgb255, rgba, shrink, spacing, spacingXY, width)
+import Element exposing (Attribute, Color, Element, Length, alignTop, centerY, el, fill, height, htmlAttribute, none, paddingXY, px, rgb, rgb255, rgba, shrink, spacing, spacingXY, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events
 import Element.Font as Font
-import Element.Input as Input
+import Element.Input as Input exposing (OptionState(..))
 import Element.Region as Region
 import Html.Attributes
 import Maybe.Extra
@@ -168,3 +168,114 @@ externalClass class =
 
 fullWidth =
     Element.width <| Element.fill
+
+
+palette =
+    { background = Dracula.black
+    , primary = Dracula.purple
+    , onBackground = Dracula.white
+    , onPrimary = Dracula.black
+    , secondary = Dracula.green
+    }
+
+
+option : Element.Element msg -> OptionState -> Element.Element msg
+option content optionState =
+    case optionState of
+        Idle ->
+            el
+                [ centerY
+                , Background.color palette.background
+                , Border.rounded 4
+                , Border.width 1
+                , Border.color palette.onBackground
+                , paddingXY 4 3
+                , Font.color palette.onBackground
+                ]
+                content
+
+        Focused ->
+            el
+                [ centerY
+                , Background.color palette.background
+                , Border.rounded 4
+                , Border.width 1
+                , Border.color palette.onBackground
+                , paddingXY 4 3
+                , Font.color palette.onBackground
+                , Border.innerGlow palette.primary 2
+                ]
+                content
+
+        Selected ->
+            el
+                [ centerY
+                , Background.color palette.primary
+                , Border.rounded 4
+                , Border.width 1
+                , Border.color palette.onBackground
+                , paddingXY 4 3
+                , Font.color palette.onPrimary
+                ]
+                content
+
+
+optionWithSlider :
+    { onChange : Float -> msg
+    , labelContent : Element msg
+    , label : Element msg -> Input.Label msg
+    , min : Float
+    , max : Float
+    , value : Float
+    , thumb : Input.Thumb
+    , step : Maybe Float
+    , width : Length
+    }
+    -> OptionState
+    -> Element.Element msg
+optionWithSlider sliderOptions optionState =
+    case optionState of
+        Idle ->
+            el
+                [ centerY
+                , Background.color palette.background
+                , Border.rounded 4
+                , Border.width 1
+                , Border.color palette.onBackground
+                , paddingXY 4 3
+                , Font.color palette.onBackground
+                ]
+                sliderOptions.labelContent
+
+        Focused ->
+            el
+                [ centerY
+                , Background.color palette.background
+                , Border.rounded 4
+                , Border.width 1
+                , Border.color palette.onBackground
+                , paddingXY 4 3
+                , Font.color palette.onBackground
+                , Border.innerGlow palette.primary 2
+                ]
+                sliderOptions.labelContent
+
+        Selected ->
+            Input.slider
+                [ centerY
+                , Background.color palette.primary
+                , Border.rounded 4
+                , Border.width 1
+                , Border.color palette.onBackground
+                , paddingXY 4 3
+                , Font.color palette.onPrimary
+                , width sliderOptions.width
+                ]
+                { onChange = sliderOptions.onChange
+                , label = sliderOptions.label sliderOptions.labelContent
+                , thumb = sliderOptions.thumb
+                , max = sliderOptions.max
+                , value = sliderOptions.value
+                , step = sliderOptions.step
+                , min = sliderOptions.min
+                }

@@ -16,9 +16,10 @@ import Html
 import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
+import RemoteService
 import Scheduler
 import Sensors
-import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, releaseButton, rightBorder, rust, stopButton, vacuumButton)
+import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, vacuumButton)
 import Task
 import Time
 
@@ -72,6 +73,7 @@ type Msg
     | SendNewPowerOffStatus Int PowerOffStatus
     | SensorReadingReceived Int (Result Json.Decode.Error AnalogReadings)
     | SensorReadingTimestampAttached Int ( Time.Posix, AnalogReadings )
+    | SensorReadingModeChanged Int AnalogServiceRequest
     | SensorsMessage Sensors.Msg
     | ChangeTabTo MainTab
     | WindowDimensionsChanged Int Int
@@ -462,7 +464,17 @@ update msg model =
                         ( sensorData, cmd ) =
                             Sensors.update model.sensorData (Sensors.NewReading id timestamp analogReadings)
                     in
-                    ( { model | sensorData = sensorData }, cmd |> Cmd.map SensorsMessage )
+                    ( { model
+                        | sensorData = sensorData
+                      }
+                        |> updateDevices
+                            (updateDevice deviceIndex
+                                (setNewAnalogServiceReadings timestamp analogReadings)
+                            )
+                    , cmd
+                        |> Cmd.map
+                            SensorsMessage
+                    )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -479,6 +491,11 @@ update msg model =
 
         WindowDimensionsChanged width height ->
             ( { model | windowSize = { width = width, height = height } }, Cmd.none )
+
+        SensorReadingModeChanged deviceIndex analogServiceRequest ->
+            ( model |> updateDevices (updateDevice deviceIndex (setNewAnalogReadRequest analogServiceRequest))
+            , requestAnalogReadings deviceIndex analogServiceRequest
+            )
 
 
 view : Model -> Browser.Document Msg
@@ -517,17 +534,17 @@ tabs { scheduler, sensorData, openTab } =
         tabStyle selected =
             [ UIBorder.roundEach { bottomRight = 0, topRight = 4, bottomLeft = 0, topLeft = 4 }
             , UIBorder.widthEach { bottom = 0, left = 2, right = 2, top = 2 }
-            , UIBackground.color Dracula.white
             , El.paddingXY 8 6
+            , UIBorder.color palette.onBackground
             ]
                 ++ (if selected then
-                        [ UIBackground.color Dracula.white, UIFont.color Dracula.purple ]
+                        [ UIBackground.color palette.primary, UIFont.color palette.onPrimary ]
 
                     else
-                        [ UIBackground.color Dracula.black, UIFont.color Dracula.white ]
+                        [ UIBackground.color palette.background, UIFont.color palette.onBackground ]
                    )
     in
-    El.column [ El.spacing 4, El.width <| El.fillPortion 8, El.alignTop, El.height  El.fill ]
+    El.column [ El.spacing 4, El.width <| El.fillPortion 8, El.alignTop, El.height El.fill ]
         [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
             [ UIInput.button (tabStyle (openTab == SchedulerTab))
                 { label =
@@ -677,6 +694,12 @@ type PowerOffServiceSelectOptions
     | DisableTimer
     | SetTimer
     | UnsupportedOption
+
+
+type AnalogServiceCommands
+    = SingleRead
+    | StopRead
+    | ContinuousRead
 
 
 displayServices : Model -> El.Element Msg
@@ -938,46 +961,6 @@ displayServices { devices, servicesPanel } =
                         _ ->
                             Nothing
 
-                optionAttrs =
-                    [ El.centerY
-                    , UIBorder.rounded 2
-                    , UIBorder.width 1
-                    , UIBorder.color Dracula.purple
-                    ]
-
-                showOption label =
-                    El.el optionAttrs <|
-                        El.text label
-
-                minutesRemainingOption : UIInput.OptionState -> El.Element Msg
-                minutesRemainingOption optionState =
-                    case optionState of
-                        UIInput.Idle ->
-                            showOption "Set Timer"
-
-                        UIInput.Focused ->
-                            showOption "Set Timer"
-
-                        UIInput.Selected ->
-                            let
-                                minutes =
-                                    minutesRemaining |> Maybe.map toFloat |> Maybe.withDefault 0
-                            in
-                            El.row (fullWidth :: optionAttrs)
-                                [ UIInput.slider [ El.width <| El.px 80 ]
-                                    { label = UIInput.labelRight [] <| El.text (String.fromFloat minutes ++ " minutes")
-                                    , onChange =
-                                        \value ->
-                                            SendNewPowerOffStatus index
-                                                (PowerOffMinutesRemaining <| round value)
-                                    , value = minutes
-                                    , min = 1
-                                    , max = 30
-                                    , step = Just 1
-                                    , thumb = UIInput.defaultThumb
-                                    }
-                                ]
-
                 minutesRemaining =
                     device.powerOffServiceStatus
                         |> Maybe.andThen
@@ -1009,14 +992,32 @@ displayServices { devices, servicesPanel } =
                             NoAction "Selected unsupported action"
 
                 selector =
+                    let
+                        minutes =
+                            minutesRemaining |> Maybe.map toFloat |> Maybe.withDefault 0
+                    in
                     UIInput.radioRow [ El.spaceEvenly, fullWidth ]
                         { onChange = onChange
                         , label = UIInput.labelAbove [] <| El.text "Power-off Status"
                         , selected = statusToOption
                         , options =
-                            [ UIInput.option TurnOff <| showOption "Off"
-                            , UIInput.option DisableTimer <| showOption "Disabled"
-                            , UIInput.optionWith SetTimer minutesRemainingOption
+                            [ UIInput.optionWith TurnOff <| Styles.option <| El.text "Off"
+                            , UIInput.optionWith DisableTimer <| Styles.option <| El.text "Disabled"
+                            , UIInput.optionWith SetTimer <|
+                                Styles.optionWithSlider <|
+                                    { label = UIInput.labelRight []
+                                    , labelContent = El.text (String.fromFloat minutes ++ " minutes")
+                                    , onChange =
+                                        \value ->
+                                            SendNewPowerOffStatus index
+                                                (PowerOffMinutesRemaining <| round value)
+                                    , value = minutes
+                                    , min = 1
+                                    , max = 30
+                                    , step = Just 1
+                                    , thumb = UIInput.defaultThumb
+                                    , width = El.px 80
+                                    }
                             ]
                         }
             in
@@ -1024,7 +1025,111 @@ displayServices { devices, servicesPanel } =
 
         displayAnalogService : Int -> FlowIODevice -> El.Element Msg
         displayAnalogService deviceIndex device =
-            El.column [] []
+            let
+                currentSelectedCommand : Maybe AnalogServiceCommands
+                currentSelectedCommand =
+                    device.analogSensorsService
+                        |> RemoteService.getCommand
+                        |> Maybe.map
+                            (\request ->
+                                case request of
+                                    RequestStopAnalog ->
+                                        StopRead
+
+                                    RequestSingleAnalogRead ->
+                                        SingleRead
+
+                                    RequestContinuousAnalog _ ->
+                                        ContinuousRead
+                            )
+
+                onChange : AnalogServiceCommands -> Msg
+                onChange command =
+                    SensorReadingModeChanged deviceIndex <|
+                        case command of
+                            SingleRead ->
+                                RequestSingleAnalogRead
+
+                            StopRead ->
+                                RequestStopAnalog
+
+                            ContinuousRead ->
+                                case device.analogSensorsService |> RemoteService.getCommand of
+                                    Just (RequestContinuousAnalog samples) ->
+                                        RequestContinuousAnalog samples
+
+                                    _ ->
+                                        RequestContinuousAnalog 1
+
+                sampleWindowSize =
+                    device.analogSensorsService
+                        |> RemoteService.getCommand
+                        |> (\cmd ->
+                                case cmd of
+                                    Just (RequestContinuousAnalog samples) ->
+                                        samples
+
+                                    _ ->
+                                        1
+                           )
+
+                commands : El.Element Msg
+                commands =
+                    UIInput.radioRow [ fullWidth ]
+                        { label = UIInput.labelAbove [] <| El.text "Read Mode:"
+                        , onChange = onChange
+                        , selected = currentSelectedCommand
+                        , options =
+                            [ UIInput.optionWith StopRead <| Styles.option <| El.text "Stop"
+                            , UIInput.optionWith SingleRead <| Styles.option <| El.text "Single"
+                            , UIInput.optionWith ContinuousRead <|
+                                Styles.optionWithSlider
+                                    { onChange =
+                                        \val ->
+                                            SensorReadingModeChanged deviceIndex (RequestContinuousAnalog <| round val)
+                                    , label = UIInput.labelRight []
+                                    , labelContent = El.text ("Continuous (" ++ String.fromInt sampleWindowSize ++ " sample avg.)")
+                                    , width = El.px 80
+                                    , min = 1
+                                    , max = 10
+                                    , step = Just 1
+                                    , value = toFloat sampleWindowSize
+                                    , thumb = UIInput.defaultThumb
+                                    }
+                            ]
+                        }
+            in
+            El.column [ fullWidth ]
+                ([ commands ]
+                    ++ (case device.analogSensorsService |> RemoteService.getData of
+                            Just { lastReading, readingsTimestamp } ->
+                                [ El.wrappedRow [ fullWidth, El.spacing 4 ] <|
+                                    (lastReading
+                                        |> Array.Extra.indexedMapToList
+                                            (\sensor val ->
+                                                El.text
+                                                    (String.fromInt sensor
+                                                        ++ ": "
+                                                        ++ String.fromInt val
+                                                    )
+                                            )
+                                    )
+                                , El.paragraph [] <|
+                                    [ El.text "Received: "
+                                    , El.text (Time.toHour Time.utc readingsTimestamp |> String.fromInt)
+                                    , El.text ":"
+                                    , El.text (Time.toMinute Time.utc readingsTimestamp |> String.fromInt)
+                                    , El.text ":"
+                                    , El.text (Time.toSecond Time.utc readingsTimestamp |> String.fromInt)
+                                    , El.text "."
+                                    , El.text (Time.toMillis Time.utc readingsTimestamp |> String.fromInt)
+                                    ]
+                                ]
+
+                            Nothing ->
+                                []
+                       )
+                )
 
         listHeader =
             case servicesPanel.panelState of

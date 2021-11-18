@@ -1,6 +1,6 @@
 port module FlowIO exposing
     ( AnalogReadings
-    , AnalogServiceData
+    , AnalogService
     , AnalogServiceRequest(..)
     , Configuration(..)
     , ControlServiceStatus
@@ -45,21 +45,24 @@ port module FlowIO exposing
     , serviceToPrettyName
     , serviceToString
     , setAction
+    , setAnalogServiceData
     , setConfiguration
     , setControlServiceStatusTo
     , setDetailsTo
     , setLastCommand
+    , setNewAnalogServiceReadings
     , setPort
     , setPowerOffStatus
     , setPumpPwm
     , setStatusTo
     , updateCommandFromStatus
-    )
+    , setNewAnalogReadRequest)
 
 import Array exposing (Array)
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
+import RemoteService exposing (Service, updateCommand, updateData)
 import Time
 
 
@@ -164,7 +167,7 @@ type alias FlowIODevice =
     , controlServiceStatus : Maybe ControlServiceStatus
     , powerOffServiceStatus : Maybe PowerOffStatus
     , configuration : Maybe Configuration
-    , analogSensorsService : Maybe AnalogServiceData
+    , analogSensorsService : AnalogService
     }
 
 
@@ -298,7 +301,7 @@ defaultDevice =
     , controlServiceStatus = Nothing
     , configuration = Nothing
     , powerOffServiceStatus = Nothing
-    , analogSensorsService = Nothing
+    , analogSensorsService = RemoteService.init
     }
 
 
@@ -787,13 +790,34 @@ type alias AnalogReadings =
     Array Int
 
 
-type alias AnalogServiceData =
-    { lastReading : AnalogReadings
-    , readingsTimestamp : Time.Posix
-    , lastRequest : Maybe AnalogServiceRequest
-    }
+type alias AnalogService =
+    Service
+        { lastReading : AnalogReadings
+        , readingsTimestamp : Time.Posix
+        }
+        AnalogServiceRequest
 
 
-setAnalogServiceData : Maybe AnalogServiceData -> FlowIODevice -> FlowIODevice
-setAnalogServiceData maybeAnalogServiceData flowIODevice =
-    { flowIODevice | analogSensorsService = maybeAnalogServiceData }
+setAnalogServiceData : AnalogService -> FlowIODevice -> FlowIODevice
+setAnalogServiceData newService flowIODevice =
+    { flowIODevice | analogSensorsService = newService }
+
+
+setNewAnalogServiceReadings : Time.Posix -> AnalogReadings -> FlowIODevice -> FlowIODevice
+setNewAnalogServiceReadings posix analogReadings device =
+    let
+        updatedService =
+            device.analogSensorsService
+                |> updateData {lastReading = analogReadings, readingsTimestamp = posix}
+    in
+    setAnalogServiceData updatedService device
+
+
+setNewAnalogReadRequest : AnalogServiceRequest -> FlowIODevice -> FlowIODevice
+setNewAnalogReadRequest request device =
+    let
+        updated =
+            device.analogSensorsService
+                |> updateCommand request
+    in
+    setAnalogServiceData updated device
