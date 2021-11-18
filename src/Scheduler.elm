@@ -111,6 +111,8 @@ view model =
         [ Font.family [ Font.typeface "Overpass", Font.typeface "Open Sans", Font.typeface "Helvetica", Font.sansSerif ]
         , Font.size 15
         , Font.color Dracula.white
+        , El.height El.fill
+        , fullWidth
         ]
         (El.column [ fullWidth, El.height <| El.fill ]
             [ header model
@@ -645,9 +647,10 @@ devicesTable model =
             }
     in
     indexedTable
-        [ El.width <| El.maximum 1060 El.fill
-        , El.height <| El.minimum 400 (El.fillPortion 10)
+        [ El.width <| El.fill
+        , El.height <| El.fill
         , El.scrollbarY
+        , El.scrollbarX
         , Font.size 11
         , El.padding 2
         ]

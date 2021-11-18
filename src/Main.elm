@@ -3,6 +3,7 @@ module Main exposing (main)
 import Array exposing (Array)
 import Array.Extra
 import Browser
+import Browser.Events
 import Color.Dracula as Dracula
 import Element as El
 import Element.Background as UIBackground
@@ -29,6 +30,7 @@ type alias Model =
         { services : List ( Int, FlowIOService )
         , panelState : PanelState
         }
+    , windowSize : { width : Int, height : Int }
     }
 
 
@@ -59,11 +61,12 @@ type Msg
     | RemoveServiceFromPanel Int FlowIOService
     | DevicePowerOffStatusChange Int PowerOffStatus
     | SendNewPowerOffStatus Int PowerOffStatus
+    | WindowDimensionsChanged Int Int
     | NoAction String
 
 
-initModel : Model
-initModel =
+initModel : { width : Int, height : Int } -> Model
+initModel { width, height } =
     { devices = Array.empty
     , listeners = []
     , scheduler = Scheduler.initModel
@@ -72,6 +75,7 @@ initModel =
         { services = []
         , panelState = PanelOpen
         }
+    , windowSize = { width = width, height = height }
     }
 
 
@@ -81,10 +85,10 @@ sendMessage msg =
         Task.succeed ()
 
 
-main : Program () Model Msg
+main : Program { width : Int, height : Int } Model Msg
 main =
     Browser.document
-        { init = \() -> ( initModel, sendMessage AddDevice )
+        { init = \windowSize -> ( initModel windowSize, sendMessage AddDevice )
         , subscriptions = subscriptions
         , update = update
         , view = view
@@ -111,6 +115,7 @@ subscriptions model =
          , Scheduler.subscriptions model.scheduler |> Sub.map SchedulerMessage
          , listenToDeviceConfiguration DeviceConfigurationChanged
          , listenToPowerOffStatus DevicePowerOffStatusChange
+         , Browser.Events.onResize WindowDimensionsChanged
          ]
             ++ (if shouldListenToControlService then
                     [ listenToDeviceControlStatus ControlServiceUpdate ]
@@ -410,6 +415,9 @@ update msg model =
         NoAction explanation ->
             ( Debug.log ("Received a no action Msg: " ++ explanation) model, Cmd.none )
 
+        WindowDimensionsChanged width height ->
+            ( { model | windowSize = { width = width, height = height } }, Cmd.none )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -421,8 +429,8 @@ view model =
 body : Model -> Html.Html Msg
 body model =
     El.layout
-        [ El.width <| El.fill
-        , El.height <| El.fill
+        [ El.width <| El.px model.windowSize.width
+        , El.height <| El.px model.windowSize.height
         , El.padding 20
         , UIFont.color Dracula.white
         , UIFont.family [ UIFont.typeface "Overpass", UIFont.typeface "Open Sans", UIFont.typeface "Helvetica", UIFont.sansSerif ]
@@ -430,7 +438,7 @@ body model =
         , UIBackground.color Dracula.black
         ]
     <|
-        El.column [ El.width <| El.fill, El.height <| El.fill ]
+        El.column [ El.width <| El.fill, El.height <| El.fill, El.spacing 10 ]
             [ header
             , El.row [ El.spacing 10, El.width El.fill, El.height <| El.fillPortion 10, El.alignTop ]
                 [ displayDeviceList model
@@ -900,7 +908,7 @@ displayServices { devices, servicesPanel } =
                             NoAction "Selected unsupported action"
 
                 selector =
-                    UIInput.radioRow [El.spaceEvenly, fullWidth]
+                    UIInput.radioRow [ El.spaceEvenly, fullWidth ]
                         { onChange = onChange
                         , label = UIInput.labelAbove [] <| El.text "Power-off Status"
                         , selected = statusToOption
@@ -912,6 +920,10 @@ displayServices { devices, servicesPanel } =
                         }
             in
             selector
+
+        displayAnalogService : Int -> FlowIODevice -> El.Element Msg
+        displayAnalogService deviceIndex device =
+            El.column [] []
 
         listHeader =
             case servicesPanel.panelState of
@@ -972,6 +984,9 @@ displayServices { devices, servicesPanel } =
 
                             PowerOffService ->
                                 displayPowerOffService deviceIndex device
+
+                            AnalogService ->
+                                displayAnalogService deviceIndex device
     in
     El.column
         [ El.alignTop
@@ -998,7 +1013,8 @@ displayServices { devices, servicesPanel } =
 
 header : El.Element Msg
 header =
-    El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <| El.text "FlowIO Scheduler"
+    El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <|
+        El.text "SymbioSing Control Panel"
 
 
 footer : El.Element Msg
