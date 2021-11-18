@@ -1,5 +1,25 @@
 const esbuild = require('esbuild')
-const buildOptions = require("./build")
+
+const ElmPlugin = require('esbuild-plugin-elm')
+const CopyPlugin = require('esbuild-plugin-copy')
+
+const buildOptions = {
+  entryPoints: ['src/index.js'],
+  bundle: true,
+  outdir: 'dist',
+  plugins: [
+    ElmPlugin({
+      debug: true,
+      clearOnWatch: false,
+    }),
+    CopyPlugin.default({
+      assets: {
+        from: ["./src/index.html", "./src/*.css"],
+        to: ["./"]
+      }
+    })
+  ],
+}
 
 esbuild.serve({
     servedir: buildOptions.outdir,
