@@ -1,5 +1,8 @@
 port module FlowIO exposing
-    ( Configuration(..)
+    ( AnalogReadings
+    , AnalogServiceData
+    , AnalogServiceRequest(..)
+    , Configuration(..)
     , ControlServiceStatus
     , DeviceDetails
     , DeviceId
@@ -24,6 +27,7 @@ port module FlowIO exposing
     , encodeCommand
     , getLastCommand
     , isPortOpen
+    , listenToAnalogReadings
     , listenToControlService
     , listenToDeviceConfiguration
     , listenToDeviceControlStatus
@@ -32,8 +36,10 @@ port module FlowIO exposing
     , portFromBool
     , queryDeviceConfiguration
     , queryPowerOffStatus
+    , requestAnalogReadings
     , sendCommand
     , sendDeviceConfiguration
+    , sendPowerOffStatus
     , sendStopAll
     , serviceFromString
     , serviceToPrettyName
@@ -44,14 +50,17 @@ port module FlowIO exposing
     , setDetailsTo
     , setLastCommand
     , setPort
+    , setPowerOffStatus
     , setPumpPwm
     , setStatusTo
     , updateCommandFromStatus
-    , setPowerOffStatus, sendPowerOffStatus)
+    )
 
+import Array exposing (Array)
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
+import Time
 
 
 
@@ -144,9 +153,8 @@ sendPowerOffStatus index status =
 
 
 -- FlowIODevice types
-
 {- TODO: Should I wrap all the service in a type to represent their status?
-possible values are probably: not supported, expecting update, updated? We also have local value versus remote one.
+   possible values are probably: not supported, expecting update, updated? We also have local value versus remote one.
 -}
 
 
@@ -156,6 +164,7 @@ type alias FlowIODevice =
     , controlServiceStatus : Maybe ControlServiceStatus
     , powerOffServiceStatus : Maybe PowerOffStatus
     , configuration : Maybe Configuration
+    , analogSensorsService : Maybe AnalogServiceData
     }
 
 
@@ -178,6 +187,7 @@ type FlowIOService
     | ConfigService
     | BatteryService
     | PowerOffService
+    | AnalogService
     | UnknownService String
 
 
@@ -206,6 +216,9 @@ serviceToString service =
         PowerOffService ->
             "power-off-service"
 
+        AnalogService ->
+            "analog-service"
+
 
 serviceToPrettyName : FlowIOService -> String
 serviceToPrettyName service =
@@ -225,6 +238,9 @@ serviceToPrettyName service =
         PowerOffService ->
             "Shutdown Timer"
 
+        AnalogService ->
+            "Sensors"
+
 
 serviceFromString : String -> FlowIOService
 serviceFromString string =
@@ -240,6 +256,9 @@ serviceFromString string =
 
         "power-off-service" ->
             PowerOffService
+
+        "analog-service" ->
+            AnalogService
 
         other ->
             UnknownService other
@@ -279,6 +298,7 @@ defaultDevice =
     , controlServiceStatus = Nothing
     , configuration = Nothing
     , powerOffServiceStatus = Nothing
+    , analogSensorsService = Nothing
     }
 
 
@@ -714,3 +734,66 @@ encodePowerOffStatus powerOffStatus =
 
         PowerOffStatusUnknown ->
             Debug.log "PowerOffStatusUnknown should not be sent to JS service!" <| JE.null
+
+
+
+-- Analog Service
+-- Analog Service ports
+
+
+port requestAnalogReadings_ : { deviceIndex : Int, mode : JE.Value } -> Cmd msg
+
+
+requestAnalogReadings : Int -> AnalogServiceRequest -> Cmd msg
+requestAnalogReadings deviceIndex request =
+    requestAnalogReadings_ { deviceIndex = deviceIndex, mode = encodeAnalogServiceRequest request }
+
+
+port listenToAnalogReadings_ : ({ deviceIndex : Int, readings : JD.Value } -> msg) -> Sub msg
+
+
+listenToAnalogReadings : (Int -> Result JD.Error AnalogReadings -> msg) -> Sub msg
+listenToAnalogReadings makeMessage =
+    let
+        unwrap { deviceIndex, readings } =
+            makeMessage deviceIndex <| JD.decodeValue (JD.array JD.int) readings
+    in
+    listenToAnalogReadings_ unwrap
+
+
+type AnalogServiceRequest
+    = RequestStopAnalog
+    | RequestSingleAnalogRead
+    | RequestContinuousAnalog Int
+
+
+encodeAnalogServiceRequest : AnalogServiceRequest -> JE.Value
+encodeAnalogServiceRequest analogServiceRequest =
+    case analogServiceRequest of
+        RequestStopAnalog ->
+            JE.object [ ( "kind", JE.string "stop" ) ]
+
+        RequestSingleAnalogRead ->
+            JE.object [ ( "kind", JE.string "single" ) ]
+
+        RequestContinuousAnalog averagingWindowSize ->
+            JE.object
+                [ ( "kind", JE.string "continuous" )
+                , ( "averagingWindowSamples", JE.int averagingWindowSize )
+                ]
+
+
+type alias AnalogReadings =
+    Array Int
+
+
+type alias AnalogServiceData =
+    { lastReading : AnalogReadings
+    , readingsTimestamp : Time.Posix
+    , lastRequest : Maybe AnalogServiceRequest
+    }
+
+
+setAnalogServiceData : Maybe AnalogServiceData -> FlowIODevice -> FlowIODevice
+setAnalogServiceData maybeAnalogServiceData flowIODevice =
+    { flowIODevice | analogSensorsService = maybeAnalogServiceData }

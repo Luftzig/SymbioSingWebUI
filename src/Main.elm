@@ -17,8 +17,10 @@ import Images exposing (configGeneralIcon, configInflateParallelIcon, configInfl
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
 import Scheduler
+import Sensors
 import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, releaseButton, rightBorder, rust, stopButton, vacuumButton)
 import Task
+import Time
 
 
 type alias Model =
@@ -30,6 +32,8 @@ type alias Model =
         { services : List ( Int, FlowIOService )
         , panelState : PanelState
         }
+    , openTab : MainTab
+    , sensorData : Sensors.Model
     , windowSize : { width : Int, height : Int }
     }
 
@@ -37,6 +41,11 @@ type alias Model =
 type PanelState
     = PanelFolded
     | PanelOpen
+
+
+type MainTab
+    = SchedulerTab
+    | SensorReadingsTab
 
 
 type Msg
@@ -61,6 +70,10 @@ type Msg
     | RemoveServiceFromPanel Int FlowIOService
     | DevicePowerOffStatusChange Int PowerOffStatus
     | SendNewPowerOffStatus Int PowerOffStatus
+    | SensorReadingReceived Int (Result Json.Decode.Error AnalogReadings)
+    | SensorReadingTimestampAttached Int ( Time.Posix, AnalogReadings )
+    | SensorsMessage Sensors.Msg
+    | ChangeTabTo MainTab
     | WindowDimensionsChanged Int Int
     | NoAction String
 
@@ -75,6 +88,8 @@ initModel { width, height } =
         { services = []
         , panelState = PanelOpen
         }
+    , openTab = SchedulerTab
+    , sensorData = Sensors.initialModel
     , windowSize = { width = width, height = height }
     }
 
@@ -115,6 +130,7 @@ subscriptions model =
          , Scheduler.subscriptions model.scheduler |> Sub.map SchedulerMessage
          , listenToDeviceConfiguration DeviceConfigurationChanged
          , listenToPowerOffStatus DevicePowerOffStatusChange
+         , listenToAnalogReadings SensorReadingReceived
          , Browser.Events.onResize WindowDimensionsChanged
          ]
             ++ (if shouldListenToControlService then
@@ -415,6 +431,52 @@ update msg model =
         NoAction explanation ->
             ( Debug.log ("Received a no action Msg: " ++ explanation) model, Cmd.none )
 
+        SensorReadingReceived deviceIndex result ->
+            result
+                |> Result.map
+                    (\analogReadings ->
+                        ( model
+                        , Time.now
+                            |> Task.perform
+                                (\timestamp ->
+                                    SensorReadingTimestampAttached deviceIndex
+                                        ( timestamp
+                                        , analogReadings
+                                        )
+                                )
+                        )
+                    )
+                |> Result.withDefault ( model, Cmd.none )
+
+        SensorReadingTimestampAttached deviceIndex ( timestamp, analogReadings ) ->
+            let
+                deviceId : Maybe DeviceId
+                deviceId =
+                    Array.get deviceIndex model.devices
+                        |> Maybe.andThen .details
+                        |> Maybe.map .id
+            in
+            case deviceId of
+                Just id ->
+                    let
+                        ( sensorData, cmd ) =
+                            Sensors.update model.sensorData (Sensors.NewReading id timestamp analogReadings)
+                    in
+                    ( { model | sensorData = sensorData }, cmd |> Cmd.map SensorsMessage )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        SensorsMessage message ->
+            let
+                ( sensorData, cmd ) =
+                    Sensors.update model.sensorData message
+            in
+            ( { model | sensorData = sensorData }, cmd |> Cmd.map SensorsMessage )
+
+        ChangeTabTo mainTab ->
+            ( { model | openTab = mainTab }, Cmd.none )
+
         WindowDimensionsChanged width height ->
             ( { model | windowSize = { width = width, height = height } }, Cmd.none )
 
@@ -443,12 +505,51 @@ body model =
             , El.row [ El.spacing 10, El.width El.fill, El.height <| El.fillPortion 10, El.alignTop ]
                 [ displayDeviceList model
                 , displayServices model
-                , El.el [ El.width <| El.fillPortion 8, El.alignTop ] <|
-                    El.map SchedulerMessage <|
-                        Scheduler.view model.scheduler
+                , tabs model
                 ]
             , footer
             ]
+
+
+tabs : Model -> El.Element Msg
+tabs { scheduler, sensorData, openTab } =
+    let
+        tabStyle selected =
+            [ UIBorder.roundEach { bottomRight = 0, topRight = 4, bottomLeft = 0, topLeft = 4 }
+            , UIBorder.widthEach { bottom = 0, left = 2, right = 2, top = 2 }
+            , UIBackground.color Dracula.white
+            , El.paddingXY 8 6
+            ]
+                ++ (if selected then
+                        [ UIBackground.color Dracula.white, UIFont.color Dracula.purple ]
+
+                    else
+                        [ UIBackground.color Dracula.black, UIFont.color Dracula.white ]
+                   )
+    in
+    El.column [ El.spacing 4, El.width <| El.fillPortion 8, El.alignTop, El.height  El.fill ]
+        [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
+            [ UIInput.button (tabStyle (openTab == SchedulerTab))
+                { label =
+                    El.text
+                        "Scheduler"
+                , onPress = Just <| ChangeTabTo SchedulerTab
+                }
+            , UIInput.button (tabStyle (openTab == SensorReadingsTab))
+                { label =
+                    El.text
+                        "Sensors"
+                , onPress = Just <| ChangeTabTo SensorReadingsTab
+                }
+            ]
+        , case openTab of
+            SchedulerTab ->
+                El.map SchedulerMessage <|
+                    Scheduler.view scheduler
+
+            SensorReadingsTab ->
+                El.map SensorsMessage <| Sensors.view sensorData
+        ]
 
 
 displayDeviceList : Model -> El.Element Msg
