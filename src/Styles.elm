@@ -279,3 +279,31 @@ optionWithSlider sliderOptions optionState =
                 , step = sliderOptions.step
                 , min = sliderOptions.min
                 }
+
+
+colorsNormal =
+    [ Background.color palette.background
+    , Border.color palette.onBackground
+    , Font.color palette.onBackground
+    ]
+
+
+colorsNegative =
+    [ Background.color palette.onBackground
+    , Border.color palette.primary
+    , Font.color palette.background
+    ]
+
+
+colorsPrimary =
+    [ Background.color palette.primary
+    , Border.color palette.onBackground
+    , Font.color palette.onPrimary
+    ]
+
+card : List (Attribute msg)
+card =
+    [ Border.rounded 4
+    , Border.width 1
+    , paddingXY 4 3
+    ]

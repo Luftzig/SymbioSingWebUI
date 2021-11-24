@@ -13,6 +13,8 @@ const buildOptions = {
       clearOnWatch: false,
     }),
     CopyPlugin.default({
+      verbose: true,
+      copyOnStart: true,
       assets: {
         from: ["./src/index.html", "./src/*.css"],
         to: ["./"]

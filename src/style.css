@@ -50,3 +50,7 @@ hr {
 }
 
 .svg-red {}
+
+.fix-body {
+    height: inherit;
+}

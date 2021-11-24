@@ -529,8 +529,19 @@ body model =
 
 
 tabs : Model -> El.Element Msg
-tabs { scheduler, sensorData, openTab } =
+tabs { scheduler, sensorData, openTab, windowSize, servicesPanel } =
     let
+        tabSize =
+            if servicesPanel.panelState == PanelFolded then
+                { height = toFloat windowSize.height * 0.85 |> round
+                , width = toFloat windowSize.width * (8 / 10) - 80 |> round
+                }
+
+            else
+                { height = toFloat windowSize.height * 0.85 |> round
+                , width = toFloat windowSize.width * (8 / 12) - 80 |> round
+                }
+
         tabStyle selected =
             [ UIBorder.roundEach { bottomRight = 0, topRight = 4, bottomLeft = 0, topLeft = 4 }
             , UIBorder.widthEach { bottom = 0, left = 2, right = 2, top = 2 }
@@ -544,7 +555,7 @@ tabs { scheduler, sensorData, openTab } =
                         [ UIBackground.color palette.background, UIFont.color palette.onBackground ]
                    )
     in
-    El.column [ El.spacing 4, El.width <| El.fillPortion 8, El.alignTop, El.height El.fill ]
+    El.column [ El.spacing 4, tabSize.width |> El.px |> El.width, El.alignTop, tabSize.height |> El.px |> El.height ]
         [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
             [ UIInput.button (tabStyle (openTab == SchedulerTab))
                 { label =
@@ -1103,16 +1114,14 @@ displayServices { devices, servicesPanel } =
                 ([ commands ]
                     ++ (case device.analogSensorsService |> RemoteService.getData of
                             Just { lastReading, readingsTimestamp } ->
-                                [ El.wrappedRow [ fullWidth, El.spacing 4 ] <|
-                                    (lastReading
-                                        |> Array.Extra.indexedMapToList
-                                            (\sensor val ->
-                                                El.text
-                                                    (String.fromInt sensor
-                                                        ++ ": "
-                                                        ++ String.fromInt val
-                                                    )
-                                            )
+                                [ El.el
+                                    [ fullWidth
+                                    , El.height <| El.px 200
+                                    , El.paddingEach { left = 30, top = 16, bottom = 16, right = 0 }
+                                    ]
+                                  <|
+                                    (Sensors.barChart { width = 300, height = 200 } readingsTimestamp lastReading
+                                        |> El.map SensorsMessage
                                     )
                                 , El.paragraph [] <|
                                     [ El.text "Received: "
