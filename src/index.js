@@ -1,6 +1,6 @@
 import {Elm} from "./Main.elm"
 import {DEFAULT_SERVICES, FlowIo} from "flow-io-web-lib"
-import ControlService from "flow-io-web-lib/src/services/controlService"
+import ControlService from "flow-io-web-lib/lib/services/controlService"
 import {ConfigService} from "flow-io-web-lib/lib/services/configService"
 import {BatteryService} from "flow-io-web-lib/lib/services/batteryService"
 import {PowerOffService} from "flow-io-web-lib/lib/services/powerOffService"

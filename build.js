@@ -20,6 +20,6 @@ esbuild.build({
     })
   ],
 }).catch(_e => {
-  console.log(e)
+  console.log(_e)
   return process.exit(1)
 })
