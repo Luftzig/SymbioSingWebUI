@@ -56,7 +56,7 @@ port module FlowIO exposing
     , setPumpPwm
     , setStatusTo
     , updateCommandFromStatus
-    , setNewAnalogReadRequest)
+    , setNewAnalogReadRequest, sensorsResolution)
 
 import Array exposing (Array)
 import Json.Decode as JD
@@ -821,3 +821,6 @@ setNewAnalogReadRequest request device =
                 |> updateCommand request
     in
     setAnalogServiceData updated device
+
+sensorsResolution : number
+sensorsResolution = 2 ^ 12

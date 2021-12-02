@@ -86,16 +86,16 @@ view model =
             model.selectedDevice
                 |> Maybe.andThen (\deviceId -> Dict.get deviceId model.sensorData)
                 |> Maybe.andThen List.head
-                |> Maybe.andThen (\( _, readings ) -> Array.get 4 readings)
+                |> Maybe.andThen (\( _, readings ) -> Array.get 15 readings)
                 |> Maybe.map
                     (\v ->
                         { sensor1 =
-                            { width = Float.Extra.interpolateFrom 0 100 (toFloat v / 1024)
+                            { width = Float.Extra.interpolateFrom 0 100 (toFloat v / FlowIO.sensorsResolution)
                             , fill =
                                 Color.Interpolate.interpolate Color.Interpolate.HSL
                                     midnightBlue
                                     lightBlue
-                                    (toFloat v / 1024)
+                                    (toFloat v / FlowIO.sensorsResolution)
                                     |> Color.toCssString
                             }
                         }
@@ -117,7 +117,7 @@ view model =
 
 
 maxReadings =
-    10000
+    1000
 
 
 update : Model -> Msg -> ( Model, Cmd Msg )
@@ -151,7 +151,7 @@ barChart { width, height } timestamp analogReadings =
                 ]
             , CA.domain
                 [ CA.lowest 0 CA.exactly
-                , CA.highest 1024 CA.exactly
+                , CA.highest FlowIO.sensorsResolution CA.exactly
                 ]
             ]
             [ C.xLabels [ CA.ints ]
