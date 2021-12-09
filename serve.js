@@ -1,25 +1,36 @@
 const esbuild = require('esbuild')
+
 const ElmPlugin = require('esbuild-plugin-elm')
 const CopyPlugin = require('esbuild-plugin-copy')
 
-esbuild.build({
+const buildOptions = {
   entryPoints: ['src/index.js'],
   bundle: true,
   outdir: 'dist',
-  watch: process.argv.includes('--watch'),
   plugins: [
     ElmPlugin({
-      debug: process.argv.includes('--watch'),
-      clearOnWatch: true,
+      debug: true,
+      clearOnWatch: false,
     }),
     CopyPlugin.default({
+      verbose: true,
+      copyOnStart: true,
       assets: {
         from: ["./src/index.html", "./src/*.css"],
         to: ["./"]
       }
     })
   ],
-}).catch(_e => {
-  console.log(_e)
+}
+
+esbuild.serve({
+    servedir: buildOptions.outdir,
+    port: 8080
+  },
+  {...buildOptions}
+).then(({host, port}) => {
+  console.log(`Serving on ${host}:${port}`)
+}).catch(e => {
+  console.error("Failed to start server", e)
   return process.exit(1)
 })

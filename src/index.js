@@ -1,19 +1,23 @@
 import {Elm} from "./Main.elm"
 import {DEFAULT_SERVICES, FlowIo} from "flow-io-web-lib"
-import ControlService from "flow-io-web-lib/src/services/controlService"
+import ControlService from "flow-io-web-lib/lib/services/controlService"
 import {ConfigService} from "flow-io-web-lib/lib/services/configService"
-import {BatteryService} from "flow-io-web-lib/lib/services/batteryService"
 import {PowerOffService} from "flow-io-web-lib/lib/services/powerOffService"
+import {AnalogService} from "flow-io-web-lib/lib/services/analogService"
 
 const flowIoDevices /*: FlowIo[]*/ = []
 
-let app = Elm.Main.init({node: document.getElementById('app-root')});
+let app = Elm.Main.init({
+  node: document.getElementById('app-root')
+  , flags: {width: window.innerWidth, height: window.innerHeight}
+});
 
 app.ports.createDevice.subscribe(() => {
   const flowIo = new FlowIo({
     control: new ControlService(),
     config: new ConfigService(),
-    powerOff: new PowerOffService()
+    powerOff: new PowerOffService(),
+    analog: new AnalogService(),
   })
   flowIoDevices.push(flowIo)
 })
@@ -39,23 +43,42 @@ app.ports.connectToDevice.subscribe(deviceIndex => {
           details: null
         })
       })
+      return {device, deviceIndex}
     })
-    .then(() => {
-      device.services.config.getConfiguration().then(config =>
-        app.ports.listenToDeviceConfiguration_.send({deviceIndex, configuration: config})
-      )
-      device.services.powerOff.getRemainingTime().then(status =>
-        app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
-      )
-      device.services.powerOff.onStatusChanged(status =>
-        app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
-      )
-    })
+    .then(registerServicesToPorts)
     .catch((e) => {
       console.log(`Failed to connect to device ${deviceIndex} due to:`, e)
       app.ports.listenToDeviceStatus.send({deviceIndex, status: 'disconnected', details: null})
     })
 })
+
+const registerServicesToPorts = ({device, deviceIndex}) => {
+  device.services.config.getConfiguration().then(config =>
+    app.ports.listenToDeviceConfiguration_.send({deviceIndex, configuration: config})
+  )
+  device.services.powerOff.getRemainingTime().then(status =>
+    app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
+  )
+  device.services.powerOff.onStatusChanged(status =>
+    app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
+  )
+  device.services.analog.onValuesChange(values =>
+    app.ports.listenToAnalogReadings_.send({deviceIndex, readings: values}))
+}
+
+const getDeviceAndService = (deviceIndex, service) => {
+  const device /* : FlowIo */ = flowIoDevices[deviceIndex]
+  if (device == null) {
+    console.error(`Requested ${service} of device number`, deviceIndex, "but there is no such device. Devices:", flowIoDevices)
+    return {device: undefined, service: undefined}
+  }
+  const srv = device.services[service]
+  if (srv == null) {
+    console.error(`Requested ${service} of device number`, deviceIndex, `but it has no ${service} service. Available service are:`, Object.keys(device.service))
+    return {device: undefined, service: undefined}
+  }
+  return {device, service: srv}
+}
 
 /* Control Service */
 app.ports.listenToControlService.subscribe(deviceIndex => {
@@ -92,15 +115,8 @@ app.ports.sendStopAll.subscribe((deviceIndex) => {
 /* Configuration Service */
 
 app.ports.queryDeviceConfiguration.subscribe(deviceIndex => {
-  const device /* : FlowIo */ = flowIoDevices[deviceIndex]
-  if (device == null) {
-    console.error("Requested configuration of device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
-    return
-  }
-  const configService = device.services.config
+  const {service: configService} = getDeviceAndService(deviceIndex, "config")
   if (configService == null) {
-    console.error("Requested configuration of device number", deviceIndex, "but it has no configuration service." +
-      " Available service are:", Object.keys(device.service))
     return
   }
   configService.getConfiguration().then(configuration =>
@@ -109,16 +125,8 @@ app.ports.queryDeviceConfiguration.subscribe(deviceIndex => {
 })
 
 app.ports.sendDeviceConfiguration_.subscribe(({deviceIndex, configuration}) => {
-  const device /* : FlowIo */ = flowIoDevices[deviceIndex]
-  if (device == null) {
-    console.error("Requested configuration of device number", deviceIndex, "but there is no such device. Devices:", flowIoDevices)
-    return
-  }
-  const configService = device.services.config
+  const {service: configService} = getDeviceAndService(deviceIndex, "config")
   if (configService == null) {
-    console.error("Requested to set configuration of device number", deviceIndex, "but it has no configuration" +
-      " service." +
-      " Available service are:", Object.keys(device.service))
     return
   }
   configService.setConfiguration(configuration)
@@ -141,18 +149,20 @@ app.ports.sendPowerOffStatus_.subscribe(({deviceIndex, status}) => {
     }
   }
 
-  const device /* : FlowIo */ = flowIoDevices[deviceIndex]
-  if (device == null) {
-    console.error("Requested power-off service of device number", deviceIndex, "but there is no such device." +
-      " Devices:", flowIoDevices)
-    return
-  }
-  const powerOffService /* : PowerOffService | undefined */ = device.services.powerOff
+  const {service: powerOffService} = getDeviceAndService(deviceIndex, "powerOff")
   if (powerOffService == null) {
-    console.error("Requested to set power-off service of device number", deviceIndex, "but it has no power-off" +
-      " service." +
-      " Available service are:", Object.keys(device.service))
     return
   }
   powerOffService.setTimer(convertToArgument(status))
+})
+
+/* Analog Service */
+app.ports.requestAnalogReadings_.subscribe(({deviceIndex, mode}) => {
+  const {service: analogService} = getDeviceAndService(deviceIndex, "analog")
+  if (analogService == null) {
+    return
+  }
+  analogService.requestValues(mode.kind, mode.averagingWindowSamples).then(r => {
+    console.debug("readings:", r, ". We expect this value to be sent through the event listener.")
+  })
 })

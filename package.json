@@ -12,11 +12,12 @@
     "not dead"
   ],
   "scripts": {
-    "start": "node ./build.js --watch",
+    "start": "node ./serve.js",
+    "watch": "node ./build.js --watch",
     "build": "node ./build.js"
   },
   "dependencies": {
-    "flow-io-web-lib": "../flow-io-web-lib"
+    "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#development"
   },
   "devDependencies": {
     "elm": "^0.19.1-5",

@@ -1,6 +1,8 @@
 module Images exposing (..)
 
+import Color
 import FlowIO
+import Html
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
 
@@ -228,3 +230,57 @@ configVacuumParallelIcon color =
     svg
         [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
         [ Svg.path [ d "M256 662l68-82M250 663l-68-81M253 654V240" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], Svg.path [ d "M471 664l68-81M465 665l-68-81M468 657V255" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], circle [ transform "translate(415 429)", cx "52.9", cy "52.9", r "52.9" ] [] ]
+
+
+bodyImage : Maybe { sensor1 : { fill : String, width : Float } } -> Html.Html msg
+bodyImage data =
+    let
+        sensor1 =
+            data
+                |> Maybe.map .sensor1
+                |> Maybe.withDefault
+                    { fill = Color.toCssString midnightBlue
+                    , width = 0
+                    }
+
+        center =
+            262.08 / 2
+    in
+    svg
+        [ width "262.08pt", height "704.88pt", viewBox "0 0 262.08 704.88" ]
+        [ defs [] []
+        , Svg.path
+            [ id "shape0"
+            , transform "matrix(0.999999993072846 0 0 0.999999993072846 88.2000002967593 19.236413020033)"
+            , fill "none"
+            , stroke "#000000"
+            , strokeWidth "9.6"
+            , strokeLinecap "square"
+            , strokeLinejoin "bevel"
+            , d "M85.68 42.84C85.68 19.1801 66.4999 1.44875e-15 42.84 0C19.1801 -1.44875e-15 2.8975e-15 19.1801 0 42.84C-2.8975e-15 66.4999 19.1801 111.617 42.84 111.617C66.4999 111.617 85.68 66.4999 85.68 42.84Z"
+            ]
+            []
+        , Svg.path [ id "shape01", transform "matrix(-0.999999991797587 0 0 0.999999991797587 232.820056546488 129.071225385617)", fill "none", stroke "#000000", strokeWidth "9.6", strokeLinecap "square", strokeLinejoin "bevel", d "M85.8258 0C88.5016 17.6581 86.1577 26.7215 78.7943 27.1902C32.5297 30.1354 6.24532 30.5723 0.989334 40.1657C-6.04233 53.0002 26.7491 168.543 25.7271 200.521C25.1784 232.274 5.97239 246.712 6.79568 286.34C7.85206 337.187 29.9161 421.51 72.988 539.31L131.266 539.791C174.196 422.022 196.617 336.956 197.815 286.079C198.226 251.14 179.898 235.477 178.878 199.145C177.857 165.73 206.779 52.5062 203.264 40.6465C200.075 29.8839 164.863 30.1788 125.459 27.671C118.172 27.2071 115.871 18.1437 118.556 0.480739" ] []
+        , rect
+            [ id "sensor1"
+            , transform <| "matrix(-1 0 0 1 " ++ String.fromFloat (center + (sensor1.width / 2)) ++ " 339.12)"
+            , fill sensor1.fill
+            , fillRule "evenodd"
+            , stroke
+                "#1a1a1a"
+            , strokeWidth "3.66"
+            , strokeLinecap "square"
+            , strokeLinejoin "bevel"
+            , width (sensor1.width |> String.fromFloat)
+            , height "26.64"
+            ]
+            []
+        ]
+
+
+lightBlue =
+    Color.rgb255 0x77 0xB3 0xFE
+
+
+midnightBlue =
+    Color.rgb255 0x00 0x00 0x80
