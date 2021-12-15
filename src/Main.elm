@@ -36,6 +36,7 @@ type alias Model =
     , openTab : MainTab
     , sensorData : Sensors.Model
     , windowSize : { width : Int, height : Int }
+    , errorBuffer : List String
     }
 
 
@@ -78,6 +79,10 @@ type Msg
     | ChangeTabTo MainTab
     | WindowDimensionsChanged Int Int
     | NoAction String
+    | RemotePidSettingsReceived Int (Result Json.Decode.Error PidSettings)
+    | PidSettingsRequested Int
+    | LocalPidSettingsChanged Int PidSettings
+    | PidGoalsChanged Int PidGoals
 
 
 initModel : { width : Int, height : Int } -> Model
@@ -93,6 +98,7 @@ initModel { width, height } =
     , openTab = SchedulerTab
     , sensorData = Sensors.initialModel
     , windowSize = { width = width, height = height }
+    , errorBuffer = []
     }
 
 
@@ -495,6 +501,27 @@ update msg model =
         SensorReadingModeChanged deviceIndex analogServiceRequest ->
             ( model |> updateDevices (updateDevice deviceIndex (setNewAnalogReadRequest analogServiceRequest))
             , requestAnalogReadings deviceIndex analogServiceRequest
+            )
+
+        RemotePidSettingsReceived deviceIndex result ->
+            case result of
+                Ok settings ->
+                    ( model |> updateDevices (updateDevice deviceIndex (setIncomingPidSettings settings)), Cmd.none )
+
+                Err error ->
+                    ( { model | errorBuffer = Json.Decode.errorToString error :: model.errorBuffer }, Cmd.none )
+
+        PidSettingsRequested deviceIndex ->
+            ( model, queryPidSettings deviceIndex )
+
+        LocalPidSettingsChanged deviceIndex pidSettings ->
+            ( model |> updateDevices (updateDevice deviceIndex (setOutgoingPidSettings pidSettings))
+            , sendPidSettings deviceIndex pidSettings
+            )
+
+        PidGoalsChanged deviceIndex pidGoals ->
+            ( model |> updateDevices (updateDevice deviceIndex (setOutgoingPidGoals pidGoals))
+            , sendPidGoals { deviceIndex = deviceIndex, goals = pidGoals }
             )
 
 
@@ -1140,6 +1167,10 @@ displayServices { devices, servicesPanel } =
                        )
                 )
 
+        displayPidService : Int -> FlowIODevice -> El.Element Msg
+        displayPidService index device =
+            El.none
+
         listHeader =
             case servicesPanel.panelState of
                 PanelFolded ->
@@ -1194,7 +1225,7 @@ displayServices { devices, servicesPanel } =
                             BatteryService ->
                                 displayBatteryService deviceIndex device
 
-                            UnknownService string ->
+                            UnknownService _ ->
                                 El.none
 
                             PowerOffService ->
@@ -1202,6 +1233,10 @@ displayServices { devices, servicesPanel } =
 
                             AnalogService ->
                                 displayAnalogService deviceIndex device
+
+                            PidService ->
+                                displayPidService deviceIndex device
+
     in
     El.column
         [ El.alignTop

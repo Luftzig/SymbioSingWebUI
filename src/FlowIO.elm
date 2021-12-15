@@ -11,6 +11,9 @@ port module FlowIO exposing
     , FlowIODevice
     , FlowIOService(..)
     , FlowIOStatus(..)
+    , PidControl
+    , PidGoals
+    , PidSettings
     , Port(..)
     , PortState(..)
     , PortsState
@@ -25,6 +28,7 @@ port module FlowIO exposing
     , deviceDetailsDecoder
     , disconnectDevice
     , encodeCommand
+    , encodePidSettings
     , getLastCommand
     , isPortOpen
     , listenToAnalogReadings
@@ -32,15 +36,19 @@ port module FlowIO exposing
     , listenToDeviceConfiguration
     , listenToDeviceControlStatus
     , listenToDeviceStatus
+    , listenToPidSettings
     , listenToPowerOffStatus
     , portFromBool
     , queryDeviceConfiguration
+    , queryPidSettings
     , queryPowerOffStatus
     , requestAnalogReadings
     , sendCommand
     , sendDeviceConfiguration
+    , sendPidSettings
     , sendPowerOffStatus
     , sendStopAll
+    , sensorsResolution
     , serviceFromString
     , serviceToPrettyName
     , serviceToString
@@ -49,20 +57,24 @@ port module FlowIO exposing
     , setConfiguration
     , setControlServiceStatusTo
     , setDetailsTo
+    , setIncomingPidSettings
     , setLastCommand
+    , setNewAnalogReadRequest
     , setNewAnalogServiceReadings
+    , setOutgoingPidSettings
     , setPort
     , setPowerOffStatus
     , setPumpPwm
     , setStatusTo
     , updateCommandFromStatus
-    , setNewAnalogReadRequest, sensorsResolution)
+    , setOutgoingPidGoals, sendPidGoals)
 
 import Array exposing (Array)
+import Bitwise
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
-import RemoteService exposing (Service, updateCommand, updateData)
+import RemoteService exposing (Service, getData, mapCommand, updateCommand, updateData)
 import Time
 
 
@@ -155,6 +167,36 @@ sendPowerOffStatus index status =
 
 
 
+-- PID Service Ports
+
+
+port queryPidSettings : Int -> Cmd msg
+
+
+port listenToPidSettings_ : ({ deviceIndex : Int, settings : JD.Value } -> msg) -> Sub msg
+
+
+listenToPidSettings : (Int -> Result JD.Error PidSettings -> msg) -> Sub msg
+listenToPidSettings toMsg =
+    listenToPidSettings_
+        (\{ deviceIndex, settings } ->
+            toMsg deviceIndex <|
+                JD.decodeValue pidSettingsDecoder settings
+        )
+
+
+port sendPidSettings_ : { deviceIndex : Int, settings : JE.Value } -> Cmd msg
+
+
+sendPidSettings : Int -> PidSettings -> Cmd msg
+sendPidSettings deviceIndex settings =
+    sendPidSettings_ { deviceIndex = deviceIndex, settings = encodePidSettings settings }
+
+
+port sendPidGoals : { deviceIndex : Int, goals : PidGoals } -> Cmd msg
+
+
+
 -- FlowIODevice types
 {- TODO: Should I wrap all the service in a type to represent their status?
    possible values are probably: not supported, expecting update, updated? We also have local value versus remote one.
@@ -168,6 +210,7 @@ type alias FlowIODevice =
     , powerOffServiceStatus : Maybe PowerOffStatus
     , configuration : Maybe Configuration
     , analogSensorsService : AnalogService
+    , pidService : RemoteService.Service PidSettings { settings : PidSettings, goals : PidGoals }
     }
 
 
@@ -191,6 +234,7 @@ type FlowIOService
     | BatteryService
     | PowerOffService
     | AnalogService
+    | PidService
     | UnknownService String
 
 
@@ -222,6 +266,9 @@ serviceToString service =
         AnalogService ->
             "analog-service"
 
+        PidService ->
+            "pid-service"
+
 
 serviceToPrettyName : FlowIOService -> String
 serviceToPrettyName service =
@@ -244,6 +291,9 @@ serviceToPrettyName service =
         AnalogService ->
             "Sensors"
 
+        PidService ->
+            "PID"
+
 
 serviceFromString : String -> FlowIOService
 serviceFromString string =
@@ -262,6 +312,9 @@ serviceFromString string =
 
         "analog-service" ->
             AnalogService
+
+        "pid-service" ->
+            PidService
 
         other ->
             UnknownService other
@@ -302,6 +355,7 @@ defaultDevice =
     , configuration = Nothing
     , powerOffServiceStatus = Nothing
     , analogSensorsService = RemoteService.init
+    , pidService = RemoteService.init
     }
 
 
@@ -522,8 +576,13 @@ pwmValueDecoder =
             )
 
 
-portsDecoder : JD.Decoder PortsState
-portsDecoder =
+portsFieldDecoder : JD.Decoder PortsState
+portsFieldDecoder =
+    JD.field "ports" portsObjectArrayOrNumberDecoder
+
+
+portsObjectArrayOrNumberDecoder : JD.Decoder PortsState
+portsObjectArrayOrNumberDecoder =
     let
         fromBool b =
             if b then
@@ -531,22 +590,56 @@ portsDecoder =
 
             else
                 PortClosed
+
+        portsArrayDecoder =
+            JD.map5
+                (\p1 p2 p3 p4 p5 ->
+                    { port1 = fromBool p1
+                    , port2 = fromBool p2
+                    , port3 = fromBool p3
+                    , port4 = fromBool p4
+                    , port5 = fromBool p5
+                    }
+                )
+                (JD.index 0 JD.bool)
+                (JD.index 1 JD.bool)
+                (JD.index 2 JD.bool)
+                (JD.index 3 JD.bool)
+                (JD.index 4 JD.bool)
+
+        portsObjectDecoder =
+            JD.map5
+                (\p1 p2 p3 p4 p5 ->
+                    { port1 = fromBool p1
+                    , port2 = fromBool p2
+                    , port3 = fromBool p3
+                    , port4 = fromBool p4
+                    , port5 = fromBool p5
+                    }
+                )
+                (JD.field "port1" JD.bool)
+                (JD.field "port2" JD.bool)
+                (JD.field "port3" JD.bool)
+                (JD.field "port4" JD.bool)
+                (JD.field "port5" JD.bool)
+
+        portsNumberDecoder =
+            JD.int
+                |> JD.map
+                    (\n ->
+                        { port1 = fromBool ((n |> Bitwise.and 0x01) /= 0)
+                        , port2 = fromBool ((n |> Bitwise.and 0x02) /= 0)
+                        , port3 = fromBool ((n |> Bitwise.and 0x04) /= 0)
+                        , port4 = fromBool ((n |> Bitwise.and 0x08) /= 0)
+                        , port5 = fromBool ((n |> Bitwise.and 0x10) /= 0)
+                        }
+                    )
     in
-    JD.field "ports" <|
-        JD.map5
-            (\p1 p2 p3 p4 p5 ->
-                { port1 = fromBool p1
-                , port2 = fromBool p2
-                , port3 = fromBool p3
-                , port4 = fromBool p4
-                , port5 = fromBool p5
-                }
-            )
-            (JD.index 0 JD.bool)
-            (JD.index 1 JD.bool)
-            (JD.index 2 JD.bool)
-            (JD.index 3 JD.bool)
-            (JD.index 4 JD.bool)
+    JD.oneOf
+        [ portsArrayDecoder
+        , portsObjectDecoder
+        , portsNumberDecoder
+        ]
 
 
 controlCommandDecoder : JD.Decoder FlowIOCommand
@@ -554,7 +647,7 @@ controlCommandDecoder =
     JD.map3 (\action pwm ports -> { action = action, pumpPwm = pwm, ports = ports })
         commandActionDecoder
         pwmValueDecoder
-        portsDecoder
+        portsFieldDecoder
 
 
 configurationEncoding : Configuration -> String
@@ -808,7 +901,7 @@ setNewAnalogServiceReadings posix analogReadings device =
     let
         updatedService =
             device.analogSensorsService
-                |> updateData {lastReading = analogReadings, readingsTimestamp = posix}
+                |> updateData { lastReading = analogReadings, readingsTimestamp = posix }
     in
     setAnalogServiceData updatedService device
 
@@ -822,5 +915,190 @@ setNewAnalogReadRequest request device =
     in
     setAnalogServiceData updated device
 
+
 sensorsResolution : number
-sensorsResolution = 2 ^ 12
+sensorsResolution =
+    2 ^ 12
+
+
+
+-- PID Service
+
+
+type alias PidControl =
+    { proportional : Float
+    , integrative : Float
+    , differential : Float
+    , inputChannel : Int
+    , outputPort : PortsState
+    }
+
+
+type alias PidSettings =
+    { positiveCommand : FlowIOAction
+    , negativeCommand : FlowIOAction
+    , control1 : PidControl
+    , control2 : PidControl
+    , control3 : PidControl
+    , control4 : PidControl
+    , control5 : PidControl
+    }
+
+
+type alias PidGoals =
+    { goal1 : Int
+    , goal2 : Int
+    , goal3 : Int
+    , goal4 : Int
+    , goal5 : Int
+    }
+
+
+setIncomingPidSettings : PidSettings -> FlowIODevice -> FlowIODevice
+setIncomingPidSettings pidSettings flowIODevice =
+    { flowIODevice | pidService = updateData pidSettings flowIODevice.pidService }
+
+
+setOutgoingPidSettings : PidSettings -> FlowIODevice -> FlowIODevice
+setOutgoingPidSettings pidSettings flowIODevice =
+    { flowIODevice
+        | pidService =
+            mapCommand
+                (\maybeCommand ->
+                    case maybeCommand of
+                        Just outgoing ->
+                            { outgoing | settings = pidSettings }
+
+                        Nothing ->
+                            { settings = pidSettings, goals = defaultPidGoals }
+                )
+                flowIODevice.pidService
+    }
+
+
+setOutgoingPidGoals : PidGoals -> FlowIODevice -> FlowIODevice
+setOutgoingPidGoals pidGoals flowIODevice =
+    { flowIODevice
+        | pidService =
+            mapCommand
+                (\maybeCommand ->
+                    case maybeCommand of
+                        Just outgoing ->
+                            { outgoing | goals = pidGoals }
+
+                        Nothing ->
+                            { settings = getData flowIODevice.pidService |> Maybe.withDefault defaultPidSettings
+                            , goals = pidGoals
+                            }
+                )
+                flowIODevice.pidService
+    }
+
+
+defaultPidGoals : PidGoals
+defaultPidGoals =
+    { goal1 = 0
+    , goal2 = 0
+    , goal3 = 0
+    , goal4 = 0
+    , goal5 = 0
+    }
+
+
+defaultPidSettings : PidSettings
+defaultPidSettings =
+    { positiveCommand = Inflate
+    , negativeCommand = Vacuum
+    , control1 = defaultPidControl
+    , control2 = defaultPidControl
+    , control3 = defaultPidControl
+    , control4 = defaultPidControl
+    , control5 = defaultPidControl
+    }
+
+
+defaultPidControl : PidControl
+defaultPidControl =
+    { differential = 0
+    , inputChannel = 0
+    , integrative = 0
+    , outputPort =
+        { port1 = PortClosed
+        , port2 = PortClosed
+        , port3 = PortClosed
+        , port4 = PortClosed
+        , port5 = PortClosed
+        }
+    , proportional = 0
+    }
+
+
+pidSettingsDecoder : JD.Decoder PidSettings
+pidSettingsDecoder =
+    JD.succeed PidSettings
+        |> required "positiveCommand" commandActionDecoder
+        |> required "negativeCommand" commandActionDecoder
+        |> required "control1" flowIOPidControlDecoder
+        |> required "control2" flowIOPidControlDecoder
+        |> required "control3" flowIOPidControlDecoder
+        |> required "control4" flowIOPidControlDecoder
+        |> required "control5" flowIOPidControlDecoder
+
+
+flowIOPidControlDecoder : JD.Decoder PidControl
+flowIOPidControlDecoder =
+    JD.succeed PidControl
+        |> required "proportional" JD.float
+        |> required "integrative" JD.float
+        |> required "differential" JD.float
+        |> required "inputChannel" JD.int
+        |> required "outputPort" portsObjectArrayOrNumberDecoder
+
+
+encodePidSettings : PidSettings -> JE.Value
+encodePidSettings pidSettings =
+    JE.object <|
+        [ ( "positiveCommand", encodeAction pidSettings.positiveCommand )
+        , ( "negativeCommand", encodeAction pidSettings.negativeCommand )
+        , ( "controls"
+          , JE.list encodeFlowIOPidControl
+                [ pidSettings.control1
+                , pidSettings.control2
+                , pidSettings.control3
+                , pidSettings.control4
+                , pidSettings.control5
+                ]
+          )
+        ]
+
+
+encodePortState : PortState -> JE.Value
+encodePortState portState =
+    case portState of
+        PortOpen ->
+            JE.bool True
+
+        PortClosed ->
+            JE.bool False
+
+
+encodeFlowIOPortsState : PortsState -> JE.Value
+encodeFlowIOPortsState portsState =
+    JE.object <|
+        [ ( "port1", encodePortState portsState.port1 )
+        , ( "port2", encodePortState portsState.port2 )
+        , ( "port3", encodePortState portsState.port3 )
+        , ( "port4", encodePortState portsState.port4 )
+        , ( "port5", encodePortState portsState.port5 )
+        ]
+
+
+encodeFlowIOPidControl : PidControl -> JE.Value
+encodeFlowIOPidControl pidControl =
+    JE.object <|
+        [ ( "proportional", JE.float pidControl.proportional )
+        , ( "integrative", JE.float pidControl.integrative )
+        , ( "differential", JE.float pidControl.differential )
+        , ( "inputChannel", JE.int pidControl.inputChannel )
+        , ( "outputPort", encodeFlowIOPortsState pidControl.outputPort )
+        ]

@@ -4,6 +4,7 @@ import ControlService from "flow-io-web-lib/lib/services/controlService"
 import {ConfigService} from "flow-io-web-lib/lib/services/configService"
 import {PowerOffService} from "flow-io-web-lib/lib/services/powerOffService"
 import {AnalogService} from "flow-io-web-lib/lib/services/analogService"
+import {PidService} from "flow-io-web-lib/lib/services/pidService"
 
 const flowIoDevices /*: FlowIo[]*/ = []
 
@@ -18,6 +19,7 @@ app.ports.createDevice.subscribe(() => {
     config: new ConfigService(),
     powerOff: new PowerOffService(),
     analog: new AnalogService(),
+    pid: new PidService(),
   })
   flowIoDevices.push(flowIo)
 })
@@ -64,6 +66,9 @@ const registerServicesToPorts = ({device, deviceIndex}) => {
   )
   device.services.analog.onValuesChange(values =>
     app.ports.listenToAnalogReadings_.send({deviceIndex, readings: values}))
+  device.services.pid.getSettings().then(settings =>
+    app.ports.listenToPidSettings_.send({deviceIndex, settings})
+  )
 }
 
 const getDeviceAndService = (deviceIndex, service) => {
@@ -165,4 +170,30 @@ app.ports.requestAnalogReadings_.subscribe(({deviceIndex, mode}) => {
   analogService.requestValues(mode.kind, mode.averagingWindowSamples).then(r => {
     console.debug("readings:", r, ". We expect this value to be sent through the event listener.")
   })
+})
+
+/* PID Service */
+
+app.ports.queryPidSettings.subscribe((deviceId) => {
+  const {service: pidService} = getDeviceAndService(deviceId, "pid")
+  if (pidService == null) {
+    return
+  }
+  pidService.getSettings().then(settings => app.ports.listenToPidSettings_.send({deviceIndex: deviceId, settings}))
+})
+
+app.ports.sendPidSettings_.subscribe(({deviceIndex, settings}) => {
+  const {service: pidService} = getDeviceAndService(deviceId, "pid")
+  if (pidService == null) {
+    return
+  }
+  pidService.setSettings(settings)
+})
+
+app.ports.sendPidGoals.subscribe(({deviceIndex, goals}) => {
+  const {service: pidService} = getDeviceAndService(deviceId, "pid")
+  if (pidService == null) {
+    return
+  }
+  pidService.setGoals(goals)
 })

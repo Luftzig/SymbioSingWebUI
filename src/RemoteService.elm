@@ -1,4 +1,4 @@
-module RemoteService exposing (Service, init, initFromCommand, updateCommand, updateData, getData, getCommand)
+module RemoteService exposing (Service, init, initFromCommand, updateCommand, updateData, getData, getCommand, mapCommand)
 
 {- This is modeled after the RemoteData type.
    A service is a remote provider that can receive commands and return data.
@@ -58,6 +58,11 @@ updateCommand cmd service =
 
         HasDataCommandSent data _ ->
             HasDataCommandSent data cmd
+
+
+mapCommand : (Maybe cmd -> cmd) -> Service data cmd -> Service data cmd
+mapCommand f service =
+    updateCommand (f <| getCommand service) service
 
 
 getCommand : Service data cmd -> Maybe cmd
