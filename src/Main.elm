@@ -37,6 +37,7 @@ type alias Model =
     , sensorData : Sensors.Model
     , windowSize : { width : Int, height : Int }
     , errorBuffer : List String
+    , errorBufferState : PanelState
     }
 
 
@@ -99,6 +100,7 @@ initModel { width, height } =
     , sensorData = Sensors.initialModel
     , windowSize = { width = width, height = height }
     , errorBuffer = []
+    , errorBufferState = PanelFolded
     }
 
 
@@ -139,6 +141,7 @@ subscriptions model =
          , listenToDeviceConfiguration DeviceConfigurationChanged
          , listenToPowerOffStatus DevicePowerOffStatusChange
          , listenToAnalogReadings SensorReadingReceived
+         , listenToPidSettings RemotePidSettingsReceived
          , Browser.Events.onResize WindowDimensionsChanged
          ]
             ++ (if shouldListenToControlService then
@@ -551,7 +554,7 @@ body model =
                 , displayServices model
                 , tabs model
                 ]
-            , footer
+            , footer model
             ]
 
 
@@ -1169,7 +1172,12 @@ displayServices { devices, servicesPanel } =
 
         displayPidService : Int -> FlowIODevice -> El.Element Msg
         displayPidService index device =
-            El.none
+            case RemoteService.getData device.pidService of
+                Just settings ->
+                    El.text "settings go here"
+
+                Nothing ->
+                    El.text "no settings here"
 
         listHeader =
             case servicesPanel.panelState of
@@ -1236,7 +1244,6 @@ displayServices { devices, servicesPanel } =
 
                             PidService ->
                                 displayPidService deviceIndex device
-
     in
     El.column
         [ El.alignTop
@@ -1267,6 +1274,12 @@ header =
         El.text "SymbioSing Control Panel"
 
 
-footer : El.Element Msg
-footer =
-    El.el [ El.alignBottom, El.height <| El.px 24 ] El.none
+footer : Model -> El.Element Msg
+footer { errorBuffer, errorBufferState } =
+    El.row [ El.alignBottom, El.height <| El.px 24, El.paddingXY 30 4 ]
+        [ if not <| List.isEmpty errorBuffer then
+            El.text ((String.fromInt <| List.length errorBuffer) ++ " Errors")
+
+          else
+            El.none
+        ]

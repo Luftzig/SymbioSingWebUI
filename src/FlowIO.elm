@@ -72,7 +72,7 @@ port module FlowIO exposing
 import Array exposing (Array)
 import Bitwise
 import Json.Decode as JD
-import Json.Decode.Pipeline exposing (optional, required)
+import Json.Decode.Pipeline exposing (optional, required, requiredAt)
 import Json.Encode as JE
 import RemoteService exposing (Service, getData, mapCommand, updateCommand, updateData)
 import Time
@@ -1038,11 +1038,11 @@ pidSettingsDecoder =
     JD.succeed PidSettings
         |> required "positiveCommand" commandActionDecoder
         |> required "negativeCommand" commandActionDecoder
-        |> required "control1" flowIOPidControlDecoder
-        |> required "control2" flowIOPidControlDecoder
-        |> required "control3" flowIOPidControlDecoder
-        |> required "control4" flowIOPidControlDecoder
-        |> required "control5" flowIOPidControlDecoder
+        |> requiredAt ["controls", "0"] flowIOPidControlDecoder
+        |> requiredAt ["controls", "1"] flowIOPidControlDecoder
+        |> requiredAt ["controls", "2"] flowIOPidControlDecoder
+        |> requiredAt ["controls", "3"] flowIOPidControlDecoder
+        |> requiredAt ["controls", "4"] flowIOPidControlDecoder
 
 
 flowIOPidControlDecoder : JD.Decoder PidControl
