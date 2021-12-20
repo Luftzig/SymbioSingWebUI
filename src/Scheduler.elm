@@ -749,7 +749,7 @@ createNewInstruction roles { time, instructions } =
                 , pumpPwm = 255
             }
     in
-    { time = Array.push (MilliSeconds (maxTime + 1)) time
+    { time = Array.push (MilliSeconds (maxTime + 100)) time
     , instructions =
         instructions
             |> Dict.map
