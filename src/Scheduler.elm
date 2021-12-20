@@ -379,10 +379,14 @@ schedulerRow role state index row =
         PlannedInstruction ->
             El.row (cellHeight :: border) [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []" ]
 
+        TooManyInstructions time numberOfRows ->
+            El.el (cellHeight :: border) <| El.text ("To many rows... (" ++ String.fromInt numberOfRows ++ ")")
+
 
 type SchedulerRow
     = ExistingInstruction Time (Dict RoleName FlowIOCommand)
     | PlannedInstruction
+    | TooManyInstructions Time Int
 
 
 devicesTable : Model -> El.Element Msg
@@ -404,15 +408,24 @@ devicesTable model =
 
         rows : List SchedulerRow
         rows =
-            model.instructions.time
-                |> Array.indexedMap
-                    (\index time ->
-                        ExistingInstruction
-                            time
-                            (instructionsAt index model.instructions.instructions)
+            if Array.length model.instructions.time > 100 then
+                [ TooManyInstructions
+                    (Maybe.withDefault (MilliSeconds 0) <|
+                        Array.get (Array.length model.instructions.time - 1) model.instructions.time
                     )
-                |> Array.push PlannedInstruction
-                |> Array.toList
+                    (Array.length model.instructions.time)
+                ]
+
+            else
+                model.instructions.time
+                    |> Array.indexedMap
+                        (\index time ->
+                            ExistingInstruction
+                                time
+                                (instructionsAt index model.instructions.instructions)
+                        )
+                    |> Array.push PlannedInstruction
+                    |> Array.toList
 
         maxTime =
             rows
@@ -520,6 +533,16 @@ devicesTable model =
                                     , isDisabled = True
                                     , onChangeDisabled = AddInstruction
                                     }
+
+                            TooManyInstructions time _ ->
+                                El.el
+                                    [ El.centerY
+                                    , El.htmlAttribute <| Html.Attributes.type_ "number"
+                                    , El.width <| El.px 80
+                                    ]
+                                <|
+                                    El.text <|
+                                        millisToString time
             }
 
         roleHeader : Int -> RoleName -> El.Element Msg
@@ -686,13 +709,22 @@ buttons model =
             , Background.color <| Dracula.green
             , attrIfElse (model.state /= Stopped) (El.alpha 0.4) (El.alpha 1.0)
             ]
-            { label = El.text "▶️ Run"
+            { label =
+                case model.state of
+                    Stopped ->
+                        El.text "▶️ Run"
+
+                    Paused _ ->
+                        El.text "⏸ Paused"
+
+                    RunningInstructions _ ->
+                        El.text "⏹ Stop"
             , onPress =
                 if model.state == Stopped && numRolesAssociated > 0 then
                     Just RunInstructions
 
                 else
-                    Nothing
+                    Just StopInstructions
             }
         , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
             { label = El.text "Save"
