@@ -14,13 +14,17 @@
   "scripts": {
     "start": "node ./serve.js",
     "watch": "node ./build.js --watch",
-    "build": "node ./build.js"
+    "build": "node ./build.js",
+    "test": "elm-test",
+    "test-watch": "elm-test --watch"
   },
   "dependencies": {
-    "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#development"
+    "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#development",
+    "global": "^4.4.0"
   },
   "devDependencies": {
     "elm": "^0.19.1-5",
+    "elm-test": "^0.19.1-revision7",
     "esbuild": "^0.13.13",
     "esbuild-plugin-copy": "^0.2.0",
     "esbuild-plugin-elm": "^0.0.6"
