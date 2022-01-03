@@ -124,7 +124,7 @@ parseMusicXml input =
         decodePartName =
             tag "part-name" string
 
-        scoreParts : Result String (List ( String, HapticPart ))
+        scoreParts : Result String (Dict PartID HapticPart)
         scoreParts =
             document
                 |> Result.map (tags "score-part")
@@ -132,8 +132,9 @@ parseMusicXml input =
                 |> Result.map (List.map Result.Extra.combineBoth)
                 |> Result.andThen Result.Extra.combine
                 |> Result.map (List.map (Tuple.mapSecond (\name -> { name = name, measures = [] })))
+                |> Result.map Dict.fromList
 
-        parts : Result String (Dict String (List Measure))
+        parts : Result String (Dict PartID (List Measure))
         parts =
             let
                 toMeasures : ( String, Value ) -> Result String ( String, List Measure )
@@ -252,6 +253,21 @@ parseMusicXml input =
         notesDecoder value =
             -- TODO: Complete implementation
             Ok (Rest (Duration 4))
+
+        merge : Dict PartID HapticPart -> Dict PartID (List Measure) -> Result String (Dict PartID HapticPart)
+        merge names measures =
+            Dict.merge
+                (\key _ _ -> Err ("Part " ++ key ++ " has name but no data"))
+                (\key part ms old -> Result.map (Dict.insert key { part | measures = ms }) old)
+                (\key _ _ -> Err ("Part " ++ key ++ " has measures but no name"))
+                names
+                measures
+                (Ok Dict.empty)
     in
-    scoreParts
-        |> Result.map Dict.fromList
+    Result.Extra.combineBoth ( scoreParts, parts )
+        |> Result.andThen
+            (\( partNames, partValues ) ->
+                merge
+                    partNames
+                    partValues
+            )

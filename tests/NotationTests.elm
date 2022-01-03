@@ -2,7 +2,7 @@ module NotationTests exposing (..)
 
 import Dict
 import Expect
-import Notation exposing (parseMusicXml)
+import Notation exposing (Timing(..), parseMusicXml)
 import Test exposing (..)
 
 
@@ -35,6 +35,19 @@ parseMusicXmlSuite =
                         Dict.values parts
                             |> List.map .name
                             |> Expect.equalLists [ "Timpani", "Timpani" ]
+        , test "read time signature for first measure" <|
+            \_ ->
+                case parsedContent of
+                    Err e ->
+                        Expect.fail ("parsing failed with error \"" ++ e ++ "\"")
+
+                    Ok parts ->
+                        parts
+                            |> Dict.get "P1"
+                            |> Maybe.map .measures
+                            |> Maybe.andThen List.head
+                            |> Maybe.map .signature
+                            |> Expect.equal (Just { beats = 4, beatType = Duration 4 })
         ]
 
 
