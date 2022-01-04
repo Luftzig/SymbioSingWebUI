@@ -4,7 +4,7 @@ import Dict exposing (Dict)
 import Result.Extra
 import Xml exposing (Value(..))
 import Xml.Decode exposing (decode)
-import Xml.Query exposing (tag, tags)
+import Xml.Query exposing (int, string, tag, tags)
 
 
 type alias HapticScore =
@@ -24,7 +24,7 @@ type alias HapticPart =
 type alias Measure =
     { number : Int
     , signature : Signature
-    , divisions : Int
+    , divisionsPerQuarter : Int
     , notes : List HapticNote
     }
 
@@ -32,7 +32,7 @@ type alias Measure =
 type alias PartialMeasure =
     { number : Int
     , signature : Maybe Signature
-    , divisions : Maybe Int
+    , divisionsPerQuarter : Maybe Int
     , notes : List HapticNote
     }
 
@@ -59,6 +59,77 @@ type Timing
     = Duration Int
 
 
+type alias NotationParserConfiguration =
+    { fullInflatePitch : Int
+    , fastInflatePitch : Int
+    , slowInflatePitch : Int
+    , slowestInflatePitch : Int
+    , fullReleasePitch : Int
+    , fastReleasePitch : Int
+    , slowReleasePitch : Int
+    , slowestReleasePitch : Int
+    }
+
+
+noteToNumber step octave alter =
+    let
+        stepToNumber s =
+            case String.trim <| String.toUpper s of
+                "C" ->
+                    Just 0
+
+                "D" ->
+                    Just 2
+
+                "E" ->
+                    Just 4
+
+                "F" ->
+                    Just 5
+
+                "G" ->
+                    Just 7
+
+                "A" ->
+                    Just 9
+
+                "B" ->
+                    Just 11
+
+                _ ->
+                    Nothing
+    in
+    stepToNumber step
+        |> Maybe.map (\stepNum -> (12 * (octave + 1)) + stepNum + alter)
+
+
+defaultConfiguration : NotationParserConfiguration
+defaultConfiguration =
+    { fullInflatePitch = 48 -- noteToNumber "C" 3 0
+    , fastInflatePitch = 47 -- noteToNumber "B" 2 0
+    , slowInflatePitch = 46 -- noteToNumber "B" 2 -1
+    , slowestInflatePitch = 45 -- noteToNumber "A" 2 0
+    , slowestReleasePitch = 44 -- noteToNumber "A" 2 -1
+    , slowReleasePitch = 43 -- noteToNumber "G" 2 0
+    , fastReleasePitch = 42 -- noteToNumber "G" 2 -1
+    , fullReleasePitch = 41 -- noteToNumber "F" 2 0
+    }
+
+
+configurationToMap : NotationParserConfiguration -> Dict Int (Timing -> HapticNote)
+configurationToMap conf =
+    Dict.fromList
+        [ ( conf.fullInflatePitch, FullInflate )
+        , ( conf.fastInflatePitch, FastInflate )
+        , ( conf.slowInflatePitch, SlowInflate )
+        , ( conf.slowestInflatePitch, SlowestInflate )
+        , ( conf.slowestReleasePitch, SlowestRelease )
+        , ( conf.slowReleasePitch, SlowRelease )
+        , ( conf.fastReleasePitch, FastRelease )
+        , ( conf.fullReleasePitch, FullRelease )
+        ]
+
+
 toTuple2 : (a -> b) -> (a -> c) -> a -> ( b, c )
 toTuple2 f g v =
     ( f v, g v )
@@ -67,30 +138,6 @@ toTuple2 f g v =
 resultMapList : (a -> b) -> Result e (List a) -> Result e (List b)
 resultMapList f =
     Result.map (List.map f)
-
-
-string : Value -> Result String String
-string value =
-    case value of
-        StrNode s ->
-            Result.Ok s
-
-        _ ->
-            Result.Err "Expected a StrNode"
-
-
-int : Value -> Result String Int
-int value =
-    case value of
-        IntNode a ->
-            Result.Ok a
-
-        StrNode s ->
-            String.toInt s
-                |> Result.fromMaybe "Expect value to be an integer string"
-
-        _ ->
-            Result.Err "Expected an integer"
 
 
 tagPath : List String -> (Value -> Result String a) -> Value -> Result String a
@@ -104,8 +151,16 @@ tagPath path decoder value =
 
 
 parseMusicXml : String -> Result String HapticScore
-parseMusicXml input =
+parseMusicXml =
+    parseMusicXmlWith defaultConfiguration
+
+
+parseMusicXmlWith : NotationParserConfiguration -> String -> Result String HapticScore
+parseMusicXmlWith configuration input =
     let
+        pitchToNoteMap =
+            configurationToMap configuration
+
         decodeAttribute : String -> (Value -> Result String a) -> Value -> Result String a
         decodeAttribute attrName decoder value =
             case value of
@@ -173,17 +228,17 @@ parseMusicXml input =
                                 m :: rest_ ->
                                     { number = m.number
                                     , signature = Maybe.withDefault initSignature m.signature
-                                    , divisions = Maybe.withDefault initDivisions m.divisions
+                                    , divisionsPerQuarter = Maybe.withDefault initDivisions m.divisionsPerQuarter
                                     , notes = m.notes
                                     }
-                                        :: completeMeasures_ (Maybe.withDefault initDivisions m.divisions)
+                                        :: completeMeasures_ (Maybe.withDefault initDivisions m.divisionsPerQuarter)
                                             (Maybe.withDefault initSignature m.signature)
                                             rest_
                     in
-                    case ( init.divisions, init.signature ) of
+                    case ( init.divisionsPerQuarter, init.signature ) of
                         ( Just div, Just sig ) ->
                             Result.Ok
-                                ({ number = init.number, signature = sig, divisions = div, notes = init.notes }
+                                ({ number = init.number, signature = sig, divisionsPerQuarter = div, notes = init.notes }
                                     :: completeMeasures_ div sig rest
                                 )
 
@@ -218,7 +273,7 @@ parseMusicXml input =
                 notes : Result String (List HapticNote)
                 notes =
                     value
-                        |> tags "notes"
+                        |> tags "note"
                         |> List.map notesDecoder
                         |> Result.Extra.combine
             in
@@ -228,14 +283,13 @@ parseMusicXml input =
                     (\( num, notes_ ) ->
                         { number = num
                         , signature = Result.toMaybe signature
-                        , divisions = Result.toMaybe divisions
+                        , divisionsPerQuarter = Result.toMaybe divisions
                         , notes = notes_
                         }
                     )
 
         signatureDecoder : Value -> Result String Signature
         signatureDecoder value =
-            -- TODO
             let
                 beats =
                     tag "beats" int value
@@ -251,8 +305,76 @@ parseMusicXml input =
 
         notesDecoder : Value -> Result String HapticNote
         notesDecoder value =
-            -- TODO: Complete implementation
-            Ok (Rest (Duration 4))
+            let
+                duration : Result String Timing
+                duration =
+                    value
+                        |> tag "duration" int
+                        |> Result.map Duration
+
+                hasRest =
+                    value
+                        |> tag "rest" (\_ -> Ok True)
+                        |> Result.Extra.isOk
+
+                step : Result String String
+                step =
+                    value
+                        |> tagPath [ "pitch", "step" ] string
+
+                octave : Result String Int
+                octave =
+                    value |> tagPath [ "pitch", "octave" ] int
+
+                alter : Maybe Int
+                alter =
+                    value
+                        |> tagPath [ "pitch", "alter" ] int
+                        |> Result.toMaybe
+
+                getAction : Timing -> Result String String -> Result String Int -> Maybe Int -> Result String HapticNote
+                getAction timing resStep resOctave maybeAlter =
+                    Result.map2
+                        (\stepVal octaveVal ->
+                            noteToNumber stepVal octaveVal (maybeAlter |> Maybe.withDefault 0)
+                                |> Maybe.andThen (\n -> Dict.get n pitchToNoteMap)
+                        )
+                        resStep
+                        resOctave
+                        |> Result.andThen
+                            (Result.fromMaybe
+                                ("value "
+                                    ++ (resStep
+                                            |> Result.withDefault
+                                                "<missing-step>"
+                                       )
+                                    ++ (resOctave |> Result.map String.fromInt |> Result.withDefault "<missing-octave>")
+                                    ++ (maybeAlter
+                                            |> Maybe.map
+                                                (\n ->
+                                                    if n > 0 then
+                                                        "+" ++ String.fromInt n
+
+                                                    else
+                                                        String.fromInt n
+                                                )
+                                            |> Maybe.withDefault ""
+                                       )
+                                    ++ " cannot be matched with action"
+                                )
+                            )
+                        |> Result.Extra.andMap (Ok timing)
+            in
+            case duration of
+                Ok duration_ ->
+                    if hasRest then
+                        Ok (Rest duration_)
+
+                    else
+                        getAction duration_ step octave alter
+
+                Err e ->
+                    Err e
 
         merge : Dict PartID HapticPart -> Dict PartID (List Measure) -> Result String (Dict PartID HapticPart)
         merge names measures =

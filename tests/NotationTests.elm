@@ -2,7 +2,8 @@ module NotationTests exposing (..)
 
 import Dict
 import Expect
-import Notation exposing (Timing(..), parseMusicXml)
+import List.Extra
+import Notation exposing (HapticNote(..), Measure, Timing(..), noteToNumber, parseMusicXml)
 import Test exposing (..)
 
 
@@ -11,6 +12,15 @@ parseMusicXmlSuite =
     let
         parsedContent =
             parseMusicXml testContent
+
+        ifParsedContentOk : (Notation.HapticScore -> Expect.Expectation) -> Expect.Expectation
+        ifParsedContentOk do =
+            case parsedContent of
+                Err e ->
+                    Expect.fail ("parsing failed with error \"" ++ e ++ "\"")
+
+                Ok score ->
+                    do score
     in
     describe "test the parsing of a musicXML file"
         [ test "parsing succeeds" <|
@@ -19,35 +29,126 @@ parseMusicXmlSuite =
                     |> Expect.ok
         , test "parsing extracts parts with correct ids" <|
             \_ ->
-                case parsedContent of
-                    Err e ->
-                        Expect.fail ("parsing failed with error \"" ++ e ++ "\"")
-
-                    Ok parts ->
-                        Dict.keys parts |> Expect.equalLists [ "P1", "P2" ]
+                ifParsedContentOk <|
+                    \parts -> Dict.keys parts |> Expect.equalLists [ "P1", "P2" ]
         , test "parsing extracts partss with correct names" <|
             \_ ->
-                case parsedContent of
-                    Err e ->
-                        Expect.fail ("parsing failed with error \"" ++ e ++ "\"")
-
-                    Ok parts ->
+                ifParsedContentOk <|
+                    \parts ->
                         Dict.values parts
                             |> List.map .name
                             |> Expect.equalLists [ "Timpani", "Timpani" ]
         , test "read time signature for first measure" <|
             \_ ->
-                case parsedContent of
-                    Err e ->
-                        Expect.fail ("parsing failed with error \"" ++ e ++ "\"")
-
-                    Ok parts ->
+                ifParsedContentOk <|
+                    \parts ->
                         parts
                             |> Dict.get "P1"
                             |> Maybe.map .measures
                             |> Maybe.andThen List.head
                             |> Maybe.map .signature
                             |> Expect.equal (Just { beats = 4, beatType = Duration 4 })
+        , test "read time division for first measure" <|
+            \_ ->
+                ifParsedContentOk <|
+                    \parts ->
+                        parts
+                            |> Dict.get "P1"
+                            |> Maybe.map .measures
+                            |> Maybe.andThen List.head
+                            |> Maybe.map .divisionsPerQuarter
+                            |> Expect.equal (Just 4)
+        , test "read time signature for second measure which is copied from 1st" <|
+            \_ ->
+                ifParsedContentOk <|
+                    \parts ->
+                        parts
+                            |> Dict.get "P1"
+                            |> Maybe.map .measures
+                            |> Maybe.andThen (List.Extra.getAt 1)
+                            |> Maybe.map .signature
+                            |> Expect.equal (Just { beats = 4, beatType = Duration 4 })
+        , test "read time division for second measure which is copied from 1st" <|
+            \_ ->
+                ifParsedContentOk <|
+                    \parts ->
+                        parts
+                            |> Dict.get "P1"
+                            |> Maybe.map .measures
+                            |> Maybe.andThen (List.Extra.getAt 1)
+                            |> Maybe.map .divisionsPerQuarter
+                            |> Expect.equal (Just 4)
+        , test "check that measure numbering is consistent" <|
+            \_ ->
+                ifParsedContentOk <|
+                    \score ->
+                        let
+                            measures =
+                                score
+                                    |> Dict.get "P1"
+                                    |> Maybe.map .measures
+                                    |> Maybe.withDefault []
+
+                            measuresCount =
+                                measures
+                                    |> List.length
+                        in
+                        measures
+                            |> List.map .number
+                            |> Expect.equalLists (List.range 1 measuresCount)
+        , test "check that time signature change is registered" <|
+            \_ ->
+                ifParsedContentOk <|
+                    \score ->
+                        let
+                            measure5 : Maybe Measure
+                            measure5 =
+                                score
+                                    |> Dict.get "P1"
+                                    |> Maybe.map .measures
+                                    |> Maybe.andThen (List.Extra.getAt 5)
+                        in
+                        measure5
+                            |> Maybe.map .signature
+                            |> Expect.equal (Just { beats = 3, beatType = Duration 8 })
+        , describe "parsing notes"
+            [ test "parse quarter rest" <|
+                \_ ->
+                    ifParsedContentOk <|
+                        \score ->
+                            score
+                                |> Dict.get "P1"
+                                |> Maybe.map .measures
+                                |> Maybe.andThen (List.Extra.getAt 0)
+                                |> Maybe.map .notes
+                                |> Maybe.andThen List.head
+                                |> Expect.equal (Just (Rest (Duration 4)))
+            , test "parse second note" <|
+                \_ ->
+                    ifParsedContentOk <|
+                        \score ->
+                            score
+                                |> Dict.get "P1"
+                                |> Maybe.map .measures
+                                |> Maybe.andThen (List.Extra.getAt 0)
+                                |> Maybe.map .notes
+                                |> Maybe.andThen (List.Extra.getAt 1)
+                                |> Expect.equal (Just (SlowestInflate (Duration 4)))
+            ]
+        , describe "Converting note symbols to pitch"
+            [ test "C3" <|
+                \_ ->
+                    noteToNumber "C" 3 0 |> Expect.equal (Just 48)
+            , test "B2" <|
+                \_ ->
+                    noteToNumber "B" 2 0 |> Expect.equal (Just 47)
+            , test "F2" <|
+                \_ ->
+                    noteToNumber "F" 2 0 |> Expect.equal (Just 41)
+            , test "G#2 = Ab2" <|
+                \_ ->
+                    noteToNumber "G" 2 1 |> Expect.equal (noteToNumber "A" 2 -1)
+            ]
         ]
 
 
@@ -157,60 +258,6 @@ testContent =
           <line>4</line>
           </clef>
         </attributes>
-      <note>
-        <rest/>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>8</duration>
-        <voice>1</voice>
-        <type>half</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>1</duration>
-        <voice>1</voice>
-        <type>16th</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>1</duration>
-        <voice>1</voice>
-        <type>16th</type>
-        </note>
-      <note>
-        <rest/>
-        <duration>1</duration>
-        <voice>1</voice>
-        <type>16th</type>
-        </note>
       <note>
         <rest/>
         <duration>4</duration>
