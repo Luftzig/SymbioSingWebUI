@@ -1,4 +1,6 @@
-module Extra.TypedTime exposing (TypedTime, add, divide, lt, milliseconds, multiply, seconds, toMilliseconds, toMillisecondsRounded, toMillisecondsString, zero, minutes)
+module Extra.TypedTime exposing (TypedTime, add, divide, equal, lt, milliseconds, minutes, multiply, seconds, toMilliseconds, toMillisecondsRounded, toMillisecondsString, zero, equalWithin)
+
+import Float.Extra
 
 
 type TypedTime
@@ -23,6 +25,16 @@ minutes m =
 zero : TypedTime
 zero =
     Milliseconds 0
+
+
+equal : TypedTime -> TypedTime -> Bool
+equal op2 op1 =
+    toMilliseconds op1 == toMilliseconds op2
+
+
+equalWithin : TypedTime -> TypedTime -> TypedTime -> Bool
+equalWithin tolerance op2 op1 =
+    Float.Extra.equalWithin (toMilliseconds tolerance) (toMilliseconds op1) (toMilliseconds op2)
 
 
 lt : TypedTime -> TypedTime -> Bool

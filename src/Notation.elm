@@ -446,6 +446,7 @@ type alias IntermediateRepr =
     { startTimeMs : TypedTime
     , action : IntermediateAction
     , force : IntermediateActionForce
+    , measureNumber : Int
     }
 
 
@@ -458,66 +459,87 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                 |> List.concatMap measureToIntermediate
                 |> List.Extra.mapAccuml durationsToAbsolutes TypedTime.zero
                 |> (\( lastTime, intermediates ) ->
-                        List.append intermediates [ { startTimeMs = lastTime, action = NoChange, force = Irrelevant } ]
+                        let
+                            lastMeasure =
+                                List.Extra.last intermediates |> Maybe.map .measureNumber
+                        in
+                        List.append intermediates
+                            [ { startTimeMs = lastTime
+                              , action = NoChange
+                              , force = Irrelevant
+                              , measureNumber = lastMeasure |> Maybe.map ((+) 1) |> Maybe.withDefault 0
+                              }
+                            ]
                    )
 
-        measureToIntermediate : Measure -> List { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }
-        measureToIntermediate { divisionsPerQuarter, notes } =
+        measureToIntermediate :
+            Measure
+            ->
+                List
+                    { duration : TypedTime
+                    , action : IntermediateAction
+                    , force : IntermediateActionForce
+                    , measureNumber : Int
+                    }
+        measureToIntermediate { divisionsPerQuarter, notes, number } =
             let
                 durationPerDivision =
                     let
                         bpmTimesDivisions =
                             toFloat (bpm * divisionsPerQuarter)
                     in
-                    (TypedTime.seconds 60
-                        |> TypedTime.divide (bpmTimesDivisions))
+                    TypedTime.seconds 60
+                        |> TypedTime.divide bpmTimesDivisions
 
                 toDuration : Timing -> TypedTime
                 toDuration d =
                     durationPerDivision |> TypedTime.multiply (toFloat d)
 
-                noteToIntermediate : HapticNote -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }
+                noteToIntermediate :
+                    HapticNote
+                    -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce, measureNumber : Int }
                 noteToIntermediate hapticNote =
                     case hapticNote of
                         Rest t ->
-                            { duration = toDuration t, action = NoChange, force = Irrelevant }
+                            { duration = toDuration t, action = NoChange, force = Irrelevant, measureNumber = number }
 
                         FullInflate t ->
-                            { duration = toDuration t, action = Inflate, force = Full }
+                            { duration = toDuration t, action = Inflate, force = Full, measureNumber = number }
 
                         FastInflate t ->
-                            { duration = toDuration t, action = Inflate, force = High }
+                            { duration = toDuration t, action = Inflate, force = High, measureNumber = number }
 
                         SlowInflate t ->
-                            { duration = toDuration t, action = Inflate, force = Medium }
+                            { duration = toDuration t, action = Inflate, force = Medium, measureNumber = number }
 
                         SlowestInflate t ->
-                            { duration = toDuration t, action = Inflate, force = Low }
+                            { duration = toDuration t, action = Inflate, force = Low, measureNumber = number }
 
                         FullRelease t ->
-                            { duration = toDuration t, action = Release, force = Full }
+                            { duration = toDuration t, action = Release, force = Full, measureNumber = number }
 
                         FastRelease t ->
-                            { duration = toDuration t, action = Release, force = High }
+                            { duration = toDuration t, action = Release, force = High, measureNumber = number }
 
                         SlowRelease t ->
-                            { duration = toDuration t, action = Release, force = Medium }
+                            { duration = toDuration t, action = Release, force = Medium, measureNumber = number }
 
                         SlowestRelease t ->
-                            { duration = toDuration t, action = Release, force = Low }
+                            { duration = toDuration t, action = Release, force = Low, measureNumber = number }
             in
             notes
                 |> List.map noteToIntermediate
 
         durationsToAbsolutes :
             TypedTime
-            -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }
+            -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce, measureNumber : Int }
             -> ( TypedTime, IntermediateRepr )
-        durationsToAbsolutes lastEndTime { duration, action, force } =
+        durationsToAbsolutes lastEndTime { duration, action, force, measureNumber } =
             ( lastEndTime |> TypedTime.add duration
             , { startTimeMs = lastEndTime
               , action = action
               , force = force
+              , measureNumber = measureNumber
               }
             )
 
@@ -552,6 +574,7 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                             records
                     )
 
+        commonTime : Array TypedTime
         commonTime =
             roles
                 |> Dict.values
@@ -569,20 +592,188 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                 |> List.map (toFloat >> TypedTime.milliseconds)
                 |> Array.fromList
 
+        commonTimeline : List TypedTime
+        commonTimeline =
+            Array.toList commonTime
+
         instructions : Result String Scheduler.RolesInstructions
         instructions =
             roles
-                |> Dict.map convertToInstructions
+                |> Dict.map (convertToInstructions commonTime)
                 |> Dict.toList
                 |> List.map Result.combineSecond
                 |> Result.combine
                 |> Result.map Dict.fromList
 
         convertToInstructions :
-            Scheduler.RoleName
+            Array TypedTime
+            -> Scheduler.RoleName
             -> List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port }
             -> Result String (Array FlowIO.FlowIOCommand)
-        convertToInstructions _ intermediatesList =
+        convertToInstructions timeline _ intermediatesList =
+            let
+                getByPort p =
+                    List.Extra.find (\{ port_ } -> port_ == p) intermediatesList
+                        |> Maybe.map .intermediates
+                        |> Maybe.withDefault []
+
+                port1 =
+                    getByPort FlowIO.Port1
+
+                port2 =
+                    getByPort FlowIO.Port2
+
+                port3 =
+                    getByPort FlowIO.Port3
+
+                port4 =
+                    getByPort FlowIO.Port4
+
+                port5 =
+                    getByPort FlowIO.Port5
+
+                fillInstructionLists :
+                    List TypedTime
+                    -> Maybe IntermediateRepr
+                    -> List IntermediateRepr
+                    -> List IntermediateRepr
+                fillInstructionLists times last intermediates =
+                    let
+                        default =
+                            Maybe.withDefault
+                                { startTimeMs = TypedTime.zero
+                                , action = NoChange
+                                , force = Irrelevant
+                                , measureNumber = 0
+                                }
+                                last
+                    in
+                    case ( times, intermediates ) of
+                        ( t :: restTimes, inter :: restIntermediates ) ->
+                            if t |> TypedTime.equalWithin (TypedTime.milliseconds 4) inter.startTimeMs then
+                                -- Nothing to do! They match
+                                inter :: fillInstructionLists restTimes (Just inter) restIntermediates
+
+                            else
+                                { default | startTimeMs = t }
+                                    :: fillInstructionLists restTimes last restIntermediates
+
+                        ( t :: restTimes, [] ) ->
+                            { default | startTimeMs = t }
+                                :: fillInstructionLists restTimes last []
+
+                        ( [], _ ) ->
+                            []
+
+                -- We need to add a new value
+                mergePortInstructions :
+                    IntermediateRepr
+                    -> IntermediateRepr
+                    -> IntermediateRepr
+                    -> IntermediateRepr
+                    -> IntermediateRepr
+                    -> Result String FlowIO.FlowIOCommand
+                mergePortInstructions p1 p2 p3 p4 p5 =
+                    let
+                        settleAction : IntermediateAction -> List IntermediateAction -> Result String IntermediateAction
+                        settleAction a1 restActions =
+                            List.foldl
+                                (\action acc ->
+                                    case ( action, acc ) of
+                                        ( _, Err e ) ->
+                                            Err e
+
+                                        ( NoChange, Ok a ) ->
+                                            Ok a
+
+                                        ( a, Ok NoChange ) ->
+                                            Ok a
+
+                                        ( Inflate, Ok Inflate ) ->
+                                            Ok Inflate
+
+                                        ( Release, Ok Release ) ->
+                                            Ok Release
+
+                                        _ ->
+                                            Err ("Problem in measure " ++ String.fromInt p1.measureNumber ++ ": conflicting actions")
+                                )
+                                (Ok a1)
+                                restActions
+
+                        toFlowIOAction : IntermediateAction -> FlowIO.FlowIOAction
+                        toFlowIOAction action =
+                            case action of
+                                NoChange ->
+                                    FlowIO.Stop
+
+                                Inflate ->
+                                    FlowIO.Inflate
+
+                                Release ->
+                                    FlowIO.Release
+
+                        settleHigherForce : IntermediateActionForce -> List IntermediateActionForce -> Int
+                        settleHigherForce initForce forces =
+                            List.foldl
+                                (\f result ->
+                                    case ( f, result ) of
+                                        ( Full, _ ) ->
+                                            Full
+
+                                        ( _, Full ) ->
+                                            Full
+
+                                        ( High, _ ) ->
+                                            High
+
+                                        ( _, High ) ->
+                                            High
+
+                                        ( Medium, _ ) ->
+                                            Medium
+
+                                        ( _, Medium ) ->
+                                            Medium
+
+                                        ( _, _ ) ->
+                                            Low
+                                )
+                                initForce
+                                forces
+                                |> (\force ->
+                                        case force of
+                                            Full ->
+                                                255
+
+                                            High ->
+                                                200
+
+                                            Medium ->
+                                                145
+
+                                            Low ->
+                                                90
+
+                                            Irrelevant ->
+                                                0
+                                   )
+                    in
+                    settleAction p1.action [ p2.action, p3.action, p4.action, p5.action ]
+                        |> Result.map
+                            (\settledAction ->
+                                { action = toFlowIOAction settledAction
+                                , pumpPwm = settleHigherForce p1.force [ p2.force, p3.force, p4.force, p5.force ]
+                                , ports =
+                                    { port1 = FlowIO.portFromBool (settledAction /= NoChange && p1.action == settledAction)
+                                    , port2 = FlowIO.portFromBool (settledAction /= NoChange && p2.action == settledAction)
+                                    , port3 = FlowIO.portFromBool (settledAction /= NoChange && p3.action == settledAction)
+                                    , port4 = FlowIO.portFromBool (settledAction /= NoChange && p4.action == settledAction)
+                                    , port5 = FlowIO.portFromBool (settledAction /= NoChange && p5.action == settledAction)
+                                    }
+                                }
+                            )
+            in
             if List.isEmpty intermediatesList || List.length intermediatesList > 5 then
                 Err "Can only map up to five parts to a single role"
 
@@ -595,7 +786,15 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                 Err "Each part needs to be mapped to a different port"
 
             else
-                Ok Array.empty
+                -- TODO: need to lists have the same size
+                List.map5 mergePortInstructions
+                    (port1 |> fillInstructionLists commonTimeline Nothing)
+                    (port2 |> fillInstructionLists commonTimeline Nothing)
+                    (port3 |> fillInstructionLists commonTimeline Nothing)
+                    (port4 |> fillInstructionLists commonTimeline Nothing)
+                    (port5 |> fillInstructionLists commonTimeline Nothing)
+                    |> Result.combine
+                    |> Result.map Array.fromList
     in
     instructions
         |> Result.map (\instructions_ -> { time = commonTime, instructions = instructions_ })
