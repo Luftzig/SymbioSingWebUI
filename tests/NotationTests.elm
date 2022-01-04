@@ -3,15 +3,29 @@ module NotationTests exposing (..)
 import Array
 import Dict
 import Expect
-import FlowIO
+import Extra.TypedTime as TypedTime
+import FlowIO exposing (defaultCommand)
 import List.Extra
-import Notation exposing (HapticNote(..), HapticScore, Measure, Timing(..), noteToNumber, parseMusicXml)
+import Notation exposing (HapticNote(..), HapticScore, Measure, Signature, noteToNumber, parseMusicXml)
 import Scheduler
 import Test exposing (..)
 
 
 convertHapticScoreSuite : Test
 convertHapticScoreSuite =
+    let
+        signature4on4 : Signature
+        signature4on4 =
+            { beats = 4, beatType = 2 }
+
+        baseMeasure : Measure
+        baseMeasure =
+            { signature = signature4on4
+            , divisionsPerQuarter = 2
+            , notes = []
+            , number = 1
+            }
+    in
     describe "convert single part scores"
         [ test "empty part" <|
             \() ->
@@ -29,7 +43,7 @@ convertHapticScoreSuite =
 
                     emptyInstructions : Scheduler.Instructions
                     emptyInstructions =
-                        { time = Array.empty
+                        { time = Array.fromList [ TypedTime.milliseconds 0 ]
                         , instructions = Dict.fromList [ ( "role-1", Array.empty ) ]
                         }
                 in
@@ -39,6 +53,40 @@ convertHapticScoreSuite =
                     }
                     score
                     |> Expect.equal (Ok emptyInstructions)
+        , test "one measure, one rest" <|
+                \() ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "test-name"
+                                    , measures =
+                                        [ { baseMeasure | notes = [ Rest (baseMeasure.divisionsPerQuarter * 4) ] } ]
+                                    }
+                                  )
+                                ]
+
+                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions =
+                            { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 4 ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            [ { defaultCommand | action = FlowIO.Stop }
+                                            , { defaultCommand | action = FlowIO.Stop }
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 60
+                        , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
+                        }
+                        score
+                        |> Expect.equal (Ok expectedInstructions)
         ]
 
 
@@ -82,7 +130,7 @@ parseMusicXmlSuite =
                             |> Maybe.map .measures
                             |> Maybe.andThen List.head
                             |> Maybe.map .signature
-                            |> Expect.equal (Just { beats = 4, beatType = Duration 4 })
+                            |> Expect.equal (Just { beats = 4, beatType = 4 })
         , test "read time division for first measure" <|
             \_ ->
                 ifParsedContentOk <|
@@ -102,7 +150,7 @@ parseMusicXmlSuite =
                             |> Maybe.map .measures
                             |> Maybe.andThen (List.Extra.getAt 1)
                             |> Maybe.map .signature
-                            |> Expect.equal (Just { beats = 4, beatType = Duration 4 })
+                            |> Expect.equal (Just { beats = 4, beatType = 4 })
         , test "read time division for second measure which is copied from 1st" <|
             \_ ->
                 ifParsedContentOk <|
@@ -145,7 +193,7 @@ parseMusicXmlSuite =
                         in
                         measure5
                             |> Maybe.map .signature
-                            |> Expect.equal (Just { beats = 3, beatType = Duration 8 })
+                            |> Expect.equal (Just { beats = 3, beatType = 8 })
         , describe "parsing notes"
             [ test "parse quarter rest" <|
                 \_ ->
@@ -157,7 +205,7 @@ parseMusicXmlSuite =
                                 |> Maybe.andThen (List.Extra.getAt 0)
                                 |> Maybe.map .notes
                                 |> Maybe.andThen List.head
-                                |> Expect.equal (Just (Rest (Duration 4)))
+                                |> Expect.equal (Just (Rest 4))
             , test "parse second note" <|
                 \_ ->
                     ifParsedContentOk <|
@@ -168,7 +216,7 @@ parseMusicXmlSuite =
                                 |> Maybe.andThen (List.Extra.getAt 0)
                                 |> Maybe.map .notes
                                 |> Maybe.andThen (List.Extra.getAt 1)
-                                |> Expect.equal (Just (SlowestInflate (Duration 4)))
+                                |> Expect.equal (Just (SlowestInflate 4))
             ]
         , describe "Converting note symbols to pitch"
             [ test "C3" <|

@@ -11,7 +11,6 @@ module Notation exposing
     , PartID
     , PartialMeasure
     , Signature
-    , Timing(..)
     , configurationToMap
     , defaultConfiguration
     , noteToNumber
@@ -26,13 +25,12 @@ module Notation exposing
 import Array exposing (Array)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Extra.TypedTime as TypedTime
+import Extra.TypedTime as TypedTime exposing (TypedTime)
 import FlowIO exposing (FlowIOAction, FlowIOCommand, PortState, portToIndex)
 import List.Extra
 import Result.Extra as Result
 import Scheduler
 import Set
-import TypedTime exposing (TypedTime)
 import Xml exposing (Value(..))
 import Xml.Decode exposing (decode)
 import Xml.Query exposing (int, string, tag, tags)
@@ -86,8 +84,8 @@ type HapticNote
     | SlowestRelease Timing
 
 
-type Timing
-    = Duration Int
+type alias Timing =
+    Int
 
 
 type alias NotationParserConfiguration =
@@ -328,7 +326,6 @@ parseMusicXmlWith configuration input =
                 beatsType =
                     value
                         |> tag "beat-type" int
-                        |> Result.map Duration
             in
             ( beats, beatsType )
                 |> Result.combineBoth
@@ -341,7 +338,6 @@ parseMusicXmlWith configuration input =
                 duration =
                     value
                         |> tag "duration" int
-                        |> Result.map Duration
 
                 hasRest =
                     value
@@ -461,17 +457,23 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
             measures
                 |> List.concatMap measureToIntermediate
                 |> List.Extra.mapAccuml durationsToAbsolutes TypedTime.zero
-                |> Tuple.second
+                |> (\( lastTime, intermediates ) ->
+                        List.append intermediates [ { startTimeMs = lastTime, action = NoChange, force = Irrelevant } ]
+                   )
 
         measureToIntermediate : Measure -> List { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }
         measureToIntermediate { divisionsPerQuarter, notes } =
             let
                 durationPerDivision =
-                    TypedTime.seconds 60
-                        |> TypedTime.divide (toFloat (bpm * divisionsPerQuarter))
+                    let
+                        bpmTimesDivisions =
+                            toFloat (bpm * divisionsPerQuarter)
+                    in
+                    (TypedTime.seconds 60
+                        |> TypedTime.divide (bpmTimesDivisions))
 
                 toDuration : Timing -> TypedTime
-                toDuration (Duration d) =
+                toDuration d =
                     durationPerDivision |> TypedTime.multiply (toFloat d)
 
                 noteToIntermediate : HapticNote -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }

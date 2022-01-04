@@ -1,4 +1,4 @@
-module Scheduler exposing (Instructions, Model, Msg(..), RoleName, initModel, subscriptions, update, view, RolesInstructions)
+module Scheduler exposing (Instructions, Model, Msg(..), RoleName, RolesInstructions, initModel, subscriptions, update, view)
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -25,7 +25,7 @@ import Json.Encode as JE
 import Styles exposing (externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 import Time exposing (Posix)
-import TypedTime exposing (TypedTime, milliseconds)
+import Extra.TypedTime exposing (TypedTime, milliseconds)
 
 
 type SchedulerState
@@ -504,7 +504,7 @@ devicesTable model =
                                     )
                                     { onChange = InstructionTimeChanged index
                                     , label = "Time at step " ++ String.fromInt index
-                                    , text = TypedTime.toString TypedTime.Milliseconds time
+                                    , text = TypedTime.toMillisecondsString time
                                     , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
                                     , isDisabled = model.state /= Stopped
                                     , onChangeDisabled = DisabledFieldClicked "Time column disabled"
@@ -533,7 +533,7 @@ devicesTable model =
                                     ]
                                 <|
                                     El.text <|
-                                        TypedTime.toString TypedTime.Milliseconds time
+                                        TypedTime.toMillisecondsString time
             }
 
         roleHeader : Int -> RoleName -> El.Element Msg
