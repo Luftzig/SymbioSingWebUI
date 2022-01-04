@@ -41,6 +41,7 @@ port module FlowIO exposing
     , sendDeviceConfiguration
     , sendPowerOffStatus
     , sendStopAll
+    , sensorsResolution
     , serviceFromString
     , serviceToPrettyName
     , serviceToString
@@ -50,13 +51,14 @@ port module FlowIO exposing
     , setControlServiceStatusTo
     , setDetailsTo
     , setLastCommand
+    , setNewAnalogReadRequest
     , setNewAnalogServiceReadings
     , setPort
     , setPowerOffStatus
     , setPumpPwm
     , setStatusTo
     , updateCommandFromStatus
-    , setNewAnalogReadRequest, sensorsResolution)
+    , portToIndex)
 
 import Array exposing (Array)
 import Json.Decode as JD
@@ -352,6 +354,25 @@ updateCommandFromStatus status command =
     { command | ports = newPorts }
 
 
+portToIndex : Port -> Int
+portToIndex port_ =
+    case port_ of
+        Port1 ->
+            1
+
+        Port2 ->
+            2
+
+        Port3 ->
+            3
+
+        Port4 ->
+            4
+
+        Port5 ->
+            5
+
+
 setPort : Port -> PortState -> FlowIOCommand -> FlowIOCommand
 setPort port_ portState command =
     let
@@ -374,12 +395,6 @@ setPort port_ portState command =
 
                 Port5 ->
                     { ports | port5 = portState }
-
-                Inlet ->
-                    ports
-
-                Outlet ->
-                    ports
     in
     { command | ports = newPorts }
 
@@ -430,8 +445,6 @@ type Port
     | Port3
     | Port4
     | Port5
-    | Inlet
-    | Outlet
 
 
 type alias PortsState =
@@ -808,7 +821,7 @@ setNewAnalogServiceReadings posix analogReadings device =
     let
         updatedService =
             device.analogSensorsService
-                |> updateData {lastReading = analogReadings, readingsTimestamp = posix}
+                |> updateData { lastReading = analogReadings, readingsTimestamp = posix }
     in
     setAnalogServiceData updatedService device
 
@@ -822,5 +835,7 @@ setNewAnalogReadRequest request device =
     in
     setAnalogServiceData updated device
 
+
 sensorsResolution : number
-sensorsResolution = 2 ^ 12
+sensorsResolution =
+    2 ^ 12

@@ -1,4 +1,4 @@
-module Scheduler exposing (Instructions, Model, Msg(..), initModel, subscriptions, update, view)
+module Scheduler exposing (Instructions, Model, Msg(..), RoleName, initModel, subscriptions, update, view, RolesInstructions)
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -365,7 +365,7 @@ schedulerRow role state index row =
         PlannedInstruction ->
             El.row (cellHeight :: border) [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []" ]
 
-        TooManyInstructions time numberOfRows ->
+        TooManyInstructions _ numberOfRows ->
             El.el (cellHeight :: border) <| El.text ("To many rows... (" ++ String.fromInt numberOfRows ++ ")")
 
 
@@ -477,7 +477,7 @@ devicesTable model =
                                             ( Just previous, current, Nothing ) ->
                                                 previous |> TypedTime.lt current
 
-                                            ( Nothing, current, Nothing ) ->
+                                            ( Nothing, _, Nothing ) ->
                                                 True
 
                                     errorAttributes =
@@ -848,10 +848,6 @@ update msg model =
 
                 Port5 ->
                     { ports | port5 = newState }
-
-                _ ->
-                    -- Warning we do not allow manipulation of inlet/outlet ports here
-                    ports
     in
     case msg of
         AddInstruction ->

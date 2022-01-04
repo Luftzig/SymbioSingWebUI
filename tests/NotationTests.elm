@@ -3,6 +3,7 @@ module NotationTests exposing (..)
 import Array
 import Dict
 import Expect
+import FlowIO
 import List.Extra
 import Notation exposing (HapticNote(..), HapticScore, Measure, Timing(..), noteToNumber, parseMusicXml)
 import Scheduler
@@ -32,7 +33,11 @@ convertHapticScoreSuite =
                         , instructions = Dict.fromList [ ( "role-1", Array.empty ) ]
                         }
                 in
-                Notation.scoreToSchedule { bpm = 100 } score
+                Notation.scoreToSchedule
+                    { bpm = 100
+                    , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
+                    }
+                    score
                     |> Expect.equal (Ok emptyInstructions)
         ]
 

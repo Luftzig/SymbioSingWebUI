@@ -1,11 +1,37 @@
-module Notation exposing (..)
+module Notation exposing
+    ( ConversionParameters
+    , HapticNote(..)
+    , HapticPart
+    , HapticScore
+    , IntermediateAction(..)
+    , IntermediateActionForce(..)
+    , IntermediateRepr
+    , Measure
+    , NotationParserConfiguration
+    , PartID
+    , PartialMeasure
+    , Signature
+    , Timing(..)
+    , configurationToMap
+    , defaultConfiguration
+    , noteToNumber
+    , parseMusicXml
+    , parseMusicXmlWith
+    , resultMapList
+    , scoreToSchedule
+    , tagPath
+    , toTuple2
+    )
 
 import Array exposing (Array)
 import Dict exposing (Dict)
-import FlowIO exposing (FlowIOAction, PortState)
+import Dict.Extra as Dict
+import Extra.TypedTime as TypedTime
+import FlowIO exposing (FlowIOAction, FlowIOCommand, PortState, portToIndex)
 import List.Extra
-import Result.Extra
+import Result.Extra as Result
 import Scheduler
+import Set
 import TypedTime exposing (TypedTime)
 import Xml exposing (Value(..))
 import Xml.Decode exposing (decode)
@@ -189,8 +215,8 @@ parseMusicXmlWith configuration input =
             document
                 |> Result.map (tags "score-part")
                 |> Result.map (List.map (toTuple2 (decodeAttribute "id" string) decodePartName))
-                |> Result.map (List.map Result.Extra.combineBoth)
-                |> Result.andThen Result.Extra.combine
+                |> Result.map (List.map Result.combineBoth)
+                |> Result.andThen Result.combine
                 |> Result.map (List.map (Tuple.mapSecond (\name -> { name = name, measures = [] })))
                 |> Result.map Dict.fromList
 
@@ -199,15 +225,15 @@ parseMusicXmlWith configuration input =
             let
                 toMeasures : ( String, Value ) -> Result String ( String, List Measure )
                 toMeasures =
-                    Result.Extra.combineMapSecond measuresDecoder
+                    Result.combineMapSecond measuresDecoder
             in
             document
                 |> Result.map (tags "part")
-                |> resultMapList (\part -> Result.Extra.combineFirst ( decodeAttribute "id" string part, part ))
-                |> Result.andThen Result.Extra.combine
+                |> resultMapList (\part -> Result.combineFirst ( decodeAttribute "id" string part, part ))
+                |> Result.andThen Result.combine
                 |> resultMapList toMeasures
-                |> Result.map Result.Extra.combine
-                |> Result.Extra.join
+                |> Result.map Result.combine
+                |> Result.join
                 |> Result.map Dict.fromList
 
         measuresDecoder : Value -> Result String (List Measure)
@@ -219,7 +245,7 @@ parseMusicXmlWith configuration input =
                 partialValues =
                     measureValues
                         |> List.map measureDecoder
-                        |> Result.Extra.combine
+                        |> Result.combine
 
                 completeMeasures : PartialMeasure -> List PartialMeasure -> Result String (List Measure)
                 completeMeasures init rest =
@@ -280,10 +306,10 @@ parseMusicXmlWith configuration input =
                     value
                         |> tags "note"
                         |> List.map notesDecoder
-                        |> Result.Extra.combine
+                        |> Result.combine
             in
             ( measureNum value, notes )
-                |> Result.Extra.combineBoth
+                |> Result.combineBoth
                 |> Result.map
                     (\( num, notes_ ) ->
                         { number = num
@@ -305,7 +331,7 @@ parseMusicXmlWith configuration input =
                         |> Result.map Duration
             in
             ( beats, beatsType )
-                |> Result.Extra.combineBoth
+                |> Result.combineBoth
                 |> Result.map (\( beats_, beatsType_ ) -> { beats = beats_, beatType = beatsType_ })
 
         notesDecoder : Value -> Result String HapticNote
@@ -320,7 +346,7 @@ parseMusicXmlWith configuration input =
                 hasRest =
                     value
                         |> tag "rest" (\_ -> Ok True)
-                        |> Result.Extra.isOk
+                        |> Result.isOk
 
                 step : Result String String
                 step =
@@ -368,7 +394,7 @@ parseMusicXmlWith configuration input =
                                     ++ " cannot be matched with action"
                                 )
                             )
-                        |> Result.Extra.andMap (Ok timing)
+                        |> Result.andMap (Ok timing)
             in
             case duration of
                 Ok duration_ ->
@@ -391,7 +417,7 @@ parseMusicXmlWith configuration input =
                 measures
                 (Ok Dict.empty)
     in
-    Result.Extra.combineBoth ( scoreParts, parts )
+    Result.combineBoth ( scoreParts, parts )
         |> Result.andThen
             (\( partNames, partValues ) ->
                 merge
@@ -402,11 +428,8 @@ parseMusicXmlWith configuration input =
 
 type alias ConversionParameters =
     { bpm : Int
+    , roleMapping : Dict PartID ( Scheduler.RoleName, FlowIO.Port )
     }
-
-
-
-{- -}
 
 
 type IntermediateAction
@@ -424,17 +447,17 @@ type IntermediateActionForce
 
 
 type alias IntermediateRepr =
-    { startTimeMs : Int
+    { startTimeMs : TypedTime
     , action : IntermediateAction
     , force : IntermediateActionForce
     }
 
 
 scoreToSchedule : ConversionParameters -> HapticScore -> Result String Scheduler.Instructions
-scoreToSchedule { bpm } hapticScore =
+scoreToSchedule { bpm, roleMapping } hapticScore =
     let
-        absoluteTimeLines : HapticPart -> List IntermediateRepr
-        absoluteTimeLines { measures } =
+        absoluteTimeLines : List Measure -> List IntermediateRepr
+        absoluteTimeLines measures =
             measures
                 |> List.concatMap measureToIntermediate
                 |> List.Extra.mapAccuml durationsToAbsolutes TypedTime.zero
@@ -490,14 +513,87 @@ scoreToSchedule { bpm } hapticScore =
             -> ( TypedTime, IntermediateRepr )
         durationsToAbsolutes lastEndTime { duration, action, force } =
             ( lastEndTime |> TypedTime.add duration
-            , { startTimeMs = TypedTime.toSeconds lastEndTime / 1000 |> round
+            , { startTimeMs = lastEndTime
               , action = action
               , force = force
               }
             )
 
-        time : List (List IntermediateRepr) -> Array Int
-        time representations =
-            Array.empty
+        roles :
+            Dict
+                Scheduler.RoleName
+                (List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port })
+        roles =
+            roleMapping
+                |> Dict.filterMap
+                    (\part ( role, port_ ) ->
+                        Dict.get part hapticScore
+                            |> Maybe.map
+                                (\{ name, measures } ->
+                                    { name = name, role = role, port_ = port_, measures = measures }
+                                )
+                    )
+                |> Dict.toList
+                |> List.map Tuple.second
+                |> Dict.groupBy (\{ role } -> role)
+                |> Dict.map
+                    (\_ records ->
+                        List.map
+                            (\{ name, role, port_, measures } ->
+                                { intermediates =
+                                    absoluteTimeLines
+                                        measures
+                                , name = name
+                                , port_ = port_
+                                }
+                            )
+                            records
+                    )
+
+        commonTime =
+            roles
+                |> Dict.values
+                |> List.concatMap
+                    (\part ->
+                        part
+                            |> List.map .intermediates
+                            |> List.concatMap (List.map .startTimeMs)
+                    )
+                |> List.map TypedTime.toMillisecondsRounded
+                |> Set.fromList
+                -- Is there a better way to deduplicate values?
+                |> Set.toList
+                |> List.sort
+                |> List.map (toFloat >> TypedTime.milliseconds)
+                |> Array.fromList
+
+        instructions : Result String Scheduler.RolesInstructions
+        instructions =
+            roles
+                |> Dict.map convertToInstructions
+                |> Dict.toList
+                |> List.map Result.combineSecond
+                |> Result.combine
+                |> Result.map Dict.fromList
+
+        convertToInstructions :
+            Scheduler.RoleName
+            -> List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port }
+            -> Result String (Array FlowIO.FlowIOCommand)
+        convertToInstructions _ intermediatesList =
+            if List.isEmpty intermediatesList || List.length intermediatesList > 5 then
+                Err "Can only map up to five parts to a single role"
+
+            else if
+                intermediatesList
+                    |> List.map (.port_ >> portToIndex)
+                    |> Dict.frequencies
+                    |> Dict.any (\_ ps -> ps > 1)
+            then
+                Err "Each part needs to be mapped to a different port"
+
+            else
+                Ok Array.empty
     in
-    Err "Not implemented"
+    instructions
+        |> Result.map (\instructions_ -> { time = commonTime, instructions = instructions_ })
