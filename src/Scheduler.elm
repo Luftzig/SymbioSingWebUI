@@ -1,4 +1,4 @@
-module Scheduler exposing (Model, Msg(..), initModel, subscriptions, update, view)
+module Scheduler exposing (Instructions, Model, Msg(..), initModel, subscriptions, update, view)
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -13,6 +13,7 @@ import Element.Events
 import Element.Font as Font
 import Element.Input exposing (labelAbove, labelHidden)
 import Element.Region as Region
+import Extra.TypedTime as TypedTime
 import File
 import File.Download
 import File.Select
@@ -24,28 +25,13 @@ import Json.Encode as JE
 import Styles exposing (externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 import Time exposing (Posix)
+import TypedTime exposing (TypedTime, milliseconds)
 
 
 type SchedulerState
     = Paused { stoppedTime : Posix, commandIndex : Int }
     | Stopped
     | RunningInstructions { startTime : Posix, commandIndex : Int }
-
-
-type Time
-    = MilliSeconds Int
-
-
-milliseconds : Time -> Int
-milliseconds (MilliSeconds n) =
-    n
-
-
-millisToString : Time -> String
-millisToString ms =
-    case ms of
-        MilliSeconds int ->
-            String.fromInt int
 
 
 type alias RoleName =
@@ -57,7 +43,7 @@ type alias RolesInstructions =
 
 
 type alias Instructions =
-    { time : Array Time
+    { time : Array TypedTime
     , instructions : RolesInstructions
     }
 
@@ -384,9 +370,9 @@ schedulerRow role state index row =
 
 
 type SchedulerRow
-    = ExistingInstruction Time (Dict RoleName FlowIOCommand)
+    = ExistingInstruction TypedTime (Dict RoleName FlowIOCommand)
     | PlannedInstruction
-    | TooManyInstructions Time Int
+    | TooManyInstructions TypedTime Int
 
 
 devicesTable : Model -> El.Element Msg
@@ -410,7 +396,7 @@ devicesTable model =
         rows =
             if Array.length model.instructions.time > 100 then
                 [ TooManyInstructions
-                    (Maybe.withDefault (MilliSeconds 0) <|
+                    (Maybe.withDefault TypedTime.zero <|
                         Array.get (Array.length model.instructions.time - 1) model.instructions.time
                     )
                     (Array.length model.instructions.time)
@@ -433,7 +419,7 @@ devicesTable model =
                     (\row ->
                         case row of
                             ExistingInstruction time _ ->
-                                milliseconds time
+                                TypedTime.toMilliseconds time
 
                             _ ->
                                 0
@@ -482,16 +468,16 @@ devicesTable model =
 
                                     isCorrectlyOrdered =
                                         case ( maybePrevious, time, maybeNext ) of
-                                            ( Just (MilliSeconds previous), MilliSeconds current, Just (MilliSeconds next) ) ->
-                                                previous < current && current < next
+                                            ( Just previous, current, Just next ) ->
+                                                (previous |> TypedTime.lt current) && (current |> TypedTime.lt next)
 
-                                            ( Nothing, MilliSeconds current, Just (MilliSeconds next) ) ->
-                                                current < next
+                                            ( Nothing, current, Just next ) ->
+                                                current |> TypedTime.lt next
 
-                                            ( Just (MilliSeconds previous), MilliSeconds current, Nothing ) ->
-                                                previous < current
+                                            ( Just previous, current, Nothing ) ->
+                                                previous |> TypedTime.lt current
 
-                                            ( Nothing, MilliSeconds current, Nothing ) ->
+                                            ( Nothing, current, Nothing ) ->
                                                 True
 
                                     errorAttributes =
@@ -518,7 +504,7 @@ devicesTable model =
                                     )
                                     { onChange = InstructionTimeChanged index
                                     , label = "Time at step " ++ String.fromInt index
-                                    , text = millisToString time
+                                    , text = TypedTime.toString TypedTime.Milliseconds time
                                     , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
                                     , isDisabled = model.state /= Stopped
                                     , onChangeDisabled = DisabledFieldClicked "Time column disabled"
@@ -528,8 +514,13 @@ devicesTable model =
                                 textField [ El.centerY, El.width <| El.px 80 ]
                                     { onChange = InstructionTimeChanged index
                                     , label = "Time at step " ++ String.fromInt index
-                                    , text = String.fromInt maxTime
-                                    , placeholder = Just <| Element.Input.placeholder [] <| El.text <| String.fromInt maxTime
+                                    , text = String.fromInt <| round maxTime
+                                    , placeholder =
+                                        Just <|
+                                            Element.Input.placeholder [] <|
+                                                El.text <|
+                                                    String.fromInt <|
+                                                        round maxTime
                                     , isDisabled = True
                                     , onChangeDisabled = AddInstruction
                                     }
@@ -542,7 +533,7 @@ devicesTable model =
                                     ]
                                 <|
                                     El.text <|
-                                        millisToString time
+                                        TypedTime.toString TypedTime.Milliseconds time
             }
 
         roleHeader : Int -> RoleName -> El.Element Msg
@@ -769,7 +760,7 @@ createNewInstruction roles { time, instructions } =
     let
         maxTime =
             time
-                |> Array.map milliseconds
+                |> Array.map TypedTime.toMilliseconds
                 |> Array.toList
                 |> List.maximum
                 |> Maybe.withDefault -1
@@ -781,7 +772,7 @@ createNewInstruction roles { time, instructions } =
                 , pumpPwm = 255
             }
     in
-    { time = Array.push (MilliSeconds (maxTime + 100)) time
+    { time = Array.push (milliseconds (maxTime + 100)) time
     , instructions =
         instructions
             |> Dict.map
@@ -882,7 +873,7 @@ update msg model =
                     ( { model
                         | instructions =
                             { time =
-                                AE.update instructionIndex (\_ -> MilliSeconds newTime) model.instructions.time
+                                AE.update instructionIndex (\_ -> milliseconds newTime) model.instructions.time
                             , instructions = model.instructions.instructions
                             }
                       }
@@ -891,7 +882,7 @@ update msg model =
             in
             case String.toInt newValue of
                 Just newTime ->
-                    updateNewTime newTime
+                    updateNewTime <| toFloat newTime
 
                 _ ->
                     if String.isEmpty newValue then
@@ -1080,8 +1071,8 @@ update msg model =
                             Array.get commandIndex model.instructions.time
                     in
                     case currentCommandTime of
-                        Just (MilliSeconds currentTime) ->
-                            if elapsedTime >= currentTime then
+                        Just currentTime ->
+                            if elapsedTime >= TypedTime.toMillisecondsRounded currentTime then
                                 -- We need to run the command and update the index
                                 let
                                     instructions : RolesInstructions
@@ -1152,7 +1143,7 @@ update msg model =
 encodeInstructions : Instructions -> JE.Value
 encodeInstructions instructions =
     JE.object
-        [ ( "time", JE.array (\(MilliSeconds ms) -> JE.int ms) instructions.time )
+        [ ( "time", JE.array (\t -> JE.int <| TypedTime.toMillisecondsRounded t) instructions.time )
         , ( "instructions", JE.dict identity (JE.array encodeCommand) instructions.instructions )
         ]
 
@@ -1160,7 +1151,7 @@ encodeInstructions instructions =
 instructionsDecoder : JD.Decoder Instructions
 instructionsDecoder =
     JD.map2 (\timeArray instructions -> { time = timeArray, instructions = instructions })
-        (JD.field "time" <| JD.array <| (JD.int |> JD.map MilliSeconds))
+        (JD.field "time" <| JD.array <| (JD.int |> JD.map (toFloat >> TypedTime.milliseconds)))
         (JD.field "instructions" (JD.dict <| JD.array controlCommandDecoder))
 
 

@@ -1,10 +1,40 @@
 module NotationTests exposing (..)
 
+import Array
 import Dict
 import Expect
 import List.Extra
-import Notation exposing (HapticNote(..), Measure, Timing(..), noteToNumber, parseMusicXml)
+import Notation exposing (HapticNote(..), HapticScore, Measure, Timing(..), noteToNumber, parseMusicXml)
+import Scheduler
 import Test exposing (..)
+
+
+convertHapticScoreSuite : Test
+convertHapticScoreSuite =
+    describe "convert single part scores"
+        [ test "empty part" <|
+            \() ->
+                let
+                    score : HapticScore
+                    score =
+                        Dict.fromList
+                            [ ( "P1"
+                              , { name = "test-name"
+                                , measures =
+                                    []
+                                }
+                              )
+                            ]
+
+                    emptyInstructions : Scheduler.Instructions
+                    emptyInstructions =
+                        { time = Array.empty
+                        , instructions = Dict.fromList [ ( "role-1", Array.empty ) ]
+                        }
+                in
+                Notation.scoreToSchedule { bpm = 100 } score
+                    |> Expect.equal (Ok emptyInstructions)
+        ]
 
 
 parseMusicXmlSuite : Test

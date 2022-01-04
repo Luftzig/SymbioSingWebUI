@@ -1,7 +1,12 @@
 module Notation exposing (..)
 
+import Array exposing (Array)
 import Dict exposing (Dict)
+import FlowIO exposing (FlowIOAction, PortState)
+import List.Extra
 import Result.Extra
+import Scheduler
+import TypedTime exposing (TypedTime)
 import Xml exposing (Value(..))
 import Xml.Decode exposing (decode)
 import Xml.Query exposing (int, string, tag, tags)
@@ -393,3 +398,106 @@ parseMusicXmlWith configuration input =
                     partNames
                     partValues
             )
+
+
+type alias ConversionParameters =
+    { bpm : Int
+    }
+
+
+
+{- -}
+
+
+type IntermediateAction
+    = Inflate
+    | Release
+    | NoChange
+
+
+type IntermediateActionForce
+    = Full
+    | High
+    | Medium
+    | Low
+    | Irrelevant
+
+
+type alias IntermediateRepr =
+    { startTimeMs : Int
+    , action : IntermediateAction
+    , force : IntermediateActionForce
+    }
+
+
+scoreToSchedule : ConversionParameters -> HapticScore -> Result String Scheduler.Instructions
+scoreToSchedule { bpm } hapticScore =
+    let
+        absoluteTimeLines : HapticPart -> List IntermediateRepr
+        absoluteTimeLines { measures } =
+            measures
+                |> List.concatMap measureToIntermediate
+                |> List.Extra.mapAccuml durationsToAbsolutes TypedTime.zero
+                |> Tuple.second
+
+        measureToIntermediate : Measure -> List { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }
+        measureToIntermediate { divisionsPerQuarter, notes } =
+            let
+                durationPerDivision =
+                    TypedTime.seconds 60
+                        |> TypedTime.divide (toFloat (bpm * divisionsPerQuarter))
+
+                toDuration : Timing -> TypedTime
+                toDuration (Duration d) =
+                    durationPerDivision |> TypedTime.multiply (toFloat d)
+
+                noteToIntermediate : HapticNote -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }
+                noteToIntermediate hapticNote =
+                    case hapticNote of
+                        Rest t ->
+                            { duration = toDuration t, action = NoChange, force = Irrelevant }
+
+                        FullInflate t ->
+                            { duration = toDuration t, action = Inflate, force = Full }
+
+                        FastInflate t ->
+                            { duration = toDuration t, action = Inflate, force = High }
+
+                        SlowInflate t ->
+                            { duration = toDuration t, action = Inflate, force = Medium }
+
+                        SlowestInflate t ->
+                            { duration = toDuration t, action = Inflate, force = Low }
+
+                        FullRelease t ->
+                            { duration = toDuration t, action = Release, force = Full }
+
+                        FastRelease t ->
+                            { duration = toDuration t, action = Release, force = High }
+
+                        SlowRelease t ->
+                            { duration = toDuration t, action = Release, force = Medium }
+
+                        SlowestRelease t ->
+                            { duration = toDuration t, action = Release, force = Low }
+            in
+            notes
+                |> List.map noteToIntermediate
+
+        durationsToAbsolutes :
+            TypedTime
+            -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce }
+            -> ( TypedTime, IntermediateRepr )
+        durationsToAbsolutes lastEndTime { duration, action, force } =
+            ( lastEndTime |> TypedTime.add duration
+            , { startTimeMs = TypedTime.toSeconds lastEndTime / 1000 |> round
+              , action = action
+              , force = force
+              }
+            )
+
+        time : List (List IntermediateRepr) -> Array Int
+        time representations =
+            Array.empty
+    in
+    Err "Not implemented"
