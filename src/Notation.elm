@@ -20,7 +20,7 @@ module Notation exposing
     , scoreToSchedule
     , tagPath
     , toTuple2
-    )
+    , forceToPwmVal)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
@@ -442,6 +442,24 @@ type IntermediateActionForce
     | Irrelevant
 
 
+forceToPwmVal force =
+    case force of
+        Full ->
+            255
+
+        High ->
+            200
+
+        Medium ->
+            145
+
+        Low ->
+            90
+
+        Irrelevant ->
+            0
+
+
 type alias IntermediateRepr =
     { startTimeMs : TypedTime
     , action : IntermediateAction
@@ -599,18 +617,17 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
         instructions : Result String Scheduler.RolesInstructions
         instructions =
             roles
-                |> Dict.map (convertToInstructions commonTime)
+                |> Dict.map convertToInstructions
                 |> Dict.toList
                 |> List.map Result.combineSecond
                 |> Result.combine
                 |> Result.map Dict.fromList
 
         convertToInstructions :
-            Array TypedTime
-            -> Scheduler.RoleName
+            Scheduler.RoleName
             -> List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port }
             -> Result String (Array FlowIO.FlowIOCommand)
-        convertToInstructions timeline _ intermediatesList =
+        convertToInstructions _ intermediatesList =
             let
                 getByPort p =
                     List.Extra.find (\{ port_ } -> port_ == p) intermediatesList
@@ -736,28 +753,18 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                                         ( _, Medium ) ->
                                             Medium
 
-                                        ( _, _ ) ->
+                                        ( Low, _ ) ->
                                             Low
+
+                                        ( _, Low ) ->
+                                            Low
+
+                                        _ ->
+                                            Irrelevant
                                 )
                                 initForce
                                 forces
-                                |> (\force ->
-                                        case force of
-                                            Full ->
-                                                255
-
-                                            High ->
-                                                200
-
-                                            Medium ->
-                                                145
-
-                                            Low ->
-                                                90
-
-                                            Irrelevant ->
-                                                0
-                                   )
+                                |> forceToPwmVal
                     in
                     settleAction p1.action [ p2.action, p3.action, p4.action, p5.action ]
                         |> Result.map
@@ -786,7 +793,6 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                 Err "Each part needs to be mapped to a different port"
 
             else
-                -- TODO: need to lists have the same size
                 List.map5 mergePortInstructions
                     (port1 |> fillInstructionLists commonTimeline Nothing)
                     (port2 |> fillInstructionLists commonTimeline Nothing)

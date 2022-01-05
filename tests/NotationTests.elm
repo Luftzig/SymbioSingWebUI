@@ -25,35 +25,44 @@ convertHapticScoreSuite =
             , notes = []
             , number = 1
             }
-    in
-    describe "convert single part scores"
-        [ test "empty part" <|
-            \() ->
-                let
-                    score : HapticScore
-                    score =
-                        Dict.fromList
-                            [ ( "P1"
-                              , { name = "test-name"
-                                , measures =
-                                    []
-                                }
-                              )
-                            ]
 
-                    emptyInstructions : Scheduler.Instructions
-                    emptyInstructions =
-                        { time = Array.fromList [ TypedTime.milliseconds 0 ]
-                        , instructions = Dict.fromList [ ( "role-1", Array.empty ) ]
+        portsAllClosed =
+            defaultCommand.ports
+
+        commandStop =
+            { defaultCommand | action = FlowIO.Stop }
+    in
+    describe "convert haptic score to schedule"
+        [ describe "convert single part scores"
+            [ test "empty part" <|
+                \() ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "test-name"
+                                    , measures =
+                                        []
+                                    }
+                                  )
+                                ]
+
+                        emptyInstructions : Scheduler.Instructions
+                        emptyInstructions =
+                            { time = Array.fromList [ TypedTime.milliseconds 0 ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1", Array.fromList [ commandStop ] ) ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 100
+                        , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
                         }
-                in
-                Notation.scoreToSchedule
-                    { bpm = 100
-                    , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
-                    }
-                    score
-                    |> Expect.equal (Ok emptyInstructions)
-        , test "one measure, one rest" <|
+                        score
+                        |> Expect.equal (Ok emptyInstructions)
+            , test "one measure, one rest" <|
                 \() ->
                     let
                         score : HapticScore
@@ -74,8 +83,8 @@ convertHapticScoreSuite =
                                 Dict.fromList
                                     [ ( "role-1"
                                       , Array.fromList
-                                            [ { defaultCommand | action = FlowIO.Stop }
-                                            , { defaultCommand | action = FlowIO.Stop }
+                                            [ commandStop
+                                            , commandStop
                                             ]
                                       )
                                     ]
@@ -87,6 +96,109 @@ convertHapticScoreSuite =
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
+            , test "one measure, note and rest" <|
+                \() ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "test-name"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Rest (baseMeasure.divisionsPerQuarter * 2)
+                                                , FullInflate (baseMeasure.divisionsPerQuarter * 2)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions =
+                            { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 1, TypedTime.seconds 2 ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            [ commandStop
+                                            , { action = FlowIO.Inflate
+                                              , pumpPwm = 255
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen }
+                                              }
+                                            , commandStop
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
+                        }
+                        score
+                        |> Expect.equal (Ok expectedInstructions)
+            , test "one measure, inflate, release" <|
+                \() ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P2"
+                                  , { name = "test-name"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ FastInflate (baseMeasure.divisionsPerQuarter * 1)
+                                                , SlowRelease (baseMeasure.divisionsPerQuarter * 3)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions =
+                            { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 0.5, TypedTime.seconds 2 ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-2"
+                                      , Array.fromList
+                                            [ { action = FlowIO.Inflate
+                                              , pumpPwm = Notation.forceToPwmVal Notation.High
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen }
+                                              }
+                                            , { action = FlowIO.Release
+                                              , pumpPwm = Notation.forceToPwmVal Notation.Medium
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen }
+                                              }
+                                            , commandStop
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping = Dict.fromList [ ( "P2", ( "role-2", FlowIO.Port1 ) ) ]
+                        }
+                        score
+                        |> Expect.equal (Ok expectedInstructions)
+            ]
+        , describe "two parts"
+            [ todo "empty parts"
+            , todo "one empty part, one part with instructions"
+            , todo "two synchronous parts"
+            , todo "one part inflates other part hold"
+            , todo "settle parts force"
+            , todo "two parts different times"
+            ]
         ]
 
 
