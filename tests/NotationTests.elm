@@ -6,7 +6,7 @@ import Expect
 import Extra.TypedTime as TypedTime
 import FlowIO exposing (defaultCommand)
 import List.Extra
-import Notation exposing (Dynamic(..), HapticNote(..), HapticScore, Measure, Signature, noteToNumber, parseMusicXml)
+import Notation exposing (Dynamic(..), HapticNote(..), HapticScore, Measure, Signature, parseMusicXml)
 import Scheduler
 import Test exposing (..)
 
@@ -84,7 +84,7 @@ convertHapticScoreSuite =
                                     , measures =
                                         [ { baseMeasure
                                             | notes =
-                                                [ Hold (Just Pianississimo) (baseMeasure.divisionsPerQuarter * 4) ]
+                                                [ Hold Pianississimo (baseMeasure.divisionsPerQuarter * 4) ]
                                           }
                                         ]
                                     }
@@ -123,8 +123,8 @@ convertHapticScoreSuite =
                                     , measures =
                                         [ { baseMeasure
                                             | notes =
-                                                [ Hold (Just Mezzopiano) (baseMeasure.divisionsPerQuarter * 2)
-                                                , Actuate (Just Fortississimo) (baseMeasure.divisionsPerQuarter * 2)
+                                                [ Hold Mezzopiano (baseMeasure.divisionsPerQuarter * 2)
+                                                , Actuate Fortississimo (baseMeasure.divisionsPerQuarter * 2)
                                                 ]
                                           }
                                         ]
@@ -169,8 +169,8 @@ convertHapticScoreSuite =
                                     , measures =
                                         [ { baseMeasure
                                             | notes =
-                                                [ Actuate (Just Fortississimo) (baseMeasure.divisionsPerQuarter * 1)
-                                                , Rest (Just Mezzoforte) (baseMeasure.divisionsPerQuarter * 3)
+                                                [ Actuate Fortississimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Rest Mezzoforte (baseMeasure.divisionsPerQuarter * 3)
                                                 ]
                                           }
                                         ]
@@ -223,12 +223,9 @@ convertHapticScoreSuite =
 parseMusicXmlSuite : Test
 parseMusicXmlSuite =
     let
-        parsedContent =
-            parseMusicXml testContentV3
-
-        ifParsedContentOk : (Notation.HapticScore -> Expect.Expectation) -> Expect.Expectation
-        ifParsedContentOk do =
-            case parsedContent of
+        ifParsedContentOk : String -> (Notation.HapticScore -> Expect.Expectation) -> Expect.Expectation
+        ifParsedContentOk content do =
+            case parseMusicXml content of
                 Err e ->
                     Expect.fail ("parsing failed with error \"" ++ e ++ "\"")
 
@@ -238,11 +235,11 @@ parseMusicXmlSuite =
     describe "test the parsing of a musicXML file"
         [ test "parsing succeeds" <|
             \_ ->
-                parsedContent
+                parseMusicXml testContentV3
                     |> Expect.ok
         , test "parsing extracts parts with correct ids" <|
             \_ ->
-                ifParsedContentOk <|
+                ifParsedContentOk testContentV3 <|
                     \parts ->
                         Dict.keys parts
                             |> List.sort
@@ -267,7 +264,7 @@ parseMusicXmlSuite =
                                 )
         , test "parsing extracts parts with correct names" <|
             \_ ->
-                ifParsedContentOk <|
+                ifParsedContentOk testContentV3 <|
                     \parts ->
                         Dict.values parts
                             |> List.map .name
@@ -290,7 +287,7 @@ parseMusicXmlSuite =
                                 ]
         , test "read time signature for first measure" <|
             \_ ->
-                ifParsedContentOk <|
+                ifParsedContentOk testSinglePart <|
                     \parts ->
                         parts
                             |> Dict.get "P1"
@@ -300,7 +297,7 @@ parseMusicXmlSuite =
                             |> Expect.equal (Just { beats = 3, beatType = 8 })
         , test "read time division for first measure" <|
             \_ ->
-                ifParsedContentOk <|
+                ifParsedContentOk testSinglePart <|
                     \parts ->
                         parts
                             |> Dict.get "P1"
@@ -310,7 +307,7 @@ parseMusicXmlSuite =
                             |> Expect.equal (Just 16)
         , test "read time signature for second measure which is copied from 1st" <|
             \_ ->
-                ifParsedContentOk <|
+                ifParsedContentOk testSinglePart <|
                     \parts ->
                         parts
                             |> Dict.get "P1"
@@ -320,7 +317,7 @@ parseMusicXmlSuite =
                             |> Expect.equal (Just { beats = 3, beatType = 8 })
         , test "read time division for second measure which is copied from 1st" <|
             \_ ->
-                ifParsedContentOk <|
+                ifParsedContentOk testSinglePart <|
                     \parts ->
                         parts
                             |> Dict.get "P1"
@@ -330,7 +327,7 @@ parseMusicXmlSuite =
                             |> Expect.equal (Just 16)
         , test "check that measure numbering is consistent" <|
             \_ ->
-                ifParsedContentOk <|
+                ifParsedContentOk testSinglePart <|
                     \score ->
                         let
                             measures =
@@ -365,19 +362,19 @@ parseMusicXmlSuite =
         --                    |> Expect.equal (Just { beats = 3, beatType = 8 })
         , describe "parsing notes"
             [ test "parse first note" <|
-                \_ ->
-                    ifParsedContentOk <|
-                        \score ->
-                            score
-                                |> Dict.get "P1"
-                                |> Maybe.map .measures
-                                |> Maybe.andThen (List.Extra.getAt 0)
-                                |> Maybe.map .notes
-                                |> Maybe.andThen List.head
-                                |> Expect.equal (Just (Actuate (Just Piano) 14))
+                    \_ ->
+                        ifParsedContentOk testSinglePart <|
+                            \score ->
+                                score
+                                    |> Dict.get "P1"
+                                    |> Maybe.map .measures
+                                    |> Maybe.andThen (List.Extra.getAt 0)
+                                    |> Maybe.map .notes
+                                    |> Maybe.andThen List.head
+                                    |> Expect.equal (Just (Actuate Piano 14))
             , test "parse second note (rest)" <|
                 \_ ->
-                    ifParsedContentOk <|
+                    ifParsedContentOk testSinglePart <|
                         \score ->
                             score
                                 |> Dict.get "P1"
@@ -385,20 +382,98 @@ parseMusicXmlSuite =
                                 |> Maybe.andThen (List.Extra.getAt 0)
                                 |> Maybe.map .notes
                                 |> Maybe.andThen (List.Extra.getAt 1)
-                                |> Expect.equal (Just (Rest (Just Piano) 8))
+                                |> Expect.equal (Just (Rest Piano 8))
             , test "parse hold note" <|
                 \_ ->
-                    ifParsedContentOk <|
+                    ifParsedContentOk testSinglePart <|
                         \score ->
                             score
-                                |> Dict.get "P6"
+                                |> Dict.get "P1"
                                 |> Maybe.map .measures
                                 |> Maybe.andThen (List.Extra.getAt 0)
                                 |> Maybe.map .notes
-                                |> Maybe.andThen (List.Extra.getAt 0)
-                                |> Expect.equal (Just (Hold Nothing 2))
+                                |> Maybe.andThen (List.Extra.getAt 2)
+                                |> Expect.equal (Just (Hold Pianississimo 2))
             ]
         ]
+
+
+testSinglePart =
+    """
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1">
+      <part-name>Abs1</part-name>
+      <part-abbreviation>A1</part-abbreviation>
+    </score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1" width="266.54">
+      <attributes>
+        <divisions>16</divisions>
+        <key>
+          <fifths>0</fifths>
+          </key>
+        <time>
+          <beats>3</beats>
+          <beat-type>8</beat-type>
+          </time>
+        <clef>
+          <sign>percussion</sign>
+          <line>2</line>
+          </clef>
+        <staff-details>
+          <staff-lines>1</staff-lines>
+          </staff-details>
+        </attributes>
+      <direction placement="below">
+        <direction-type>
+          <dynamics default-x="3.25" default-y="-26.84" relative-y="-25.00">
+            <p/>
+            </dynamics>
+          </direction-type>
+        <sound dynamics="54.44"/>
+        </direction>
+      <note default-x="69.00" default-y="0.00">
+        <unpitched>
+          <display-step>E</display-step>
+          <display-octave>4</display-octave>
+          </unpitched>
+        <duration>14</duration>
+        <instrument id="P1-I82"/>
+        <voice>1</voice>
+        <type>eighth</type>
+        <dot/>
+        <dot/>
+        <stem>down</stem>
+        </note>
+      <note>
+        <rest/>
+        <duration>8</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+        </note>
+      <note default-x="69.00" default-y="-423.62">
+        <unpitched>
+          <display-step>E</display-step>
+          <display-octave>4</display-octave>
+          </unpitched>
+        <duration>2</duration>
+        <instrument id="P6-I81"/>
+        <voice>1</voice>
+        <type>32nd</type>
+        <stem>down</stem>
+        <notehead>x</notehead>
+        <beam number="1">begin</beam>
+        <beam number="2">begin</beam>
+        <beam number="3">forward hook</beam>
+        </note>
+    </measure>
+  </part>
+</score-partwise>
+"""
 
 
 testContentV3 =

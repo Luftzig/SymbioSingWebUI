@@ -11,12 +11,10 @@ module Notation exposing
     , PartID
     , PartialMeasure
     , Signature
-    , noteToNumber
     , parseMusicXml
     , parseMusicXmlWith
     , resultMapList
     , scoreToSchedule
-    , tagPath
     , toTuple2
     )
 
@@ -24,6 +22,7 @@ import Array exposing (Array)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
 import Extra.TypedTime as TypedTime exposing (TypedTime)
+import Extra.Xml exposing (oneOfTags, tagPath)
 import FlowIO exposing (FlowIOAction, FlowIOCommand, PortState, portToIndex)
 import List.Extra
 import Maybe.Extra as Maybe
@@ -73,9 +72,9 @@ type alias Signature =
 
 
 type HapticNote
-    = Rest (Maybe Dynamic) Timing
-    | Hold (Maybe Dynamic) Timing
-    | Actuate (Maybe Dynamic) Timing
+    = Rest Dynamic Timing
+    | Hold Dynamic Timing
+    | Actuate Dynamic Timing
 
 
 type alias Timing =
@@ -156,38 +155,6 @@ type alias NotationParserConfiguration =
     {}
 
 
-noteToNumber step octave alter =
-    let
-        stepToNumber s =
-            case String.trim <| String.toUpper s of
-                "C" ->
-                    Just 0
-
-                "D" ->
-                    Just 2
-
-                "E" ->
-                    Just 4
-
-                "F" ->
-                    Just 5
-
-                "G" ->
-                    Just 7
-
-                "A" ->
-                    Just 9
-
-                "B" ->
-                    Just 11
-
-                _ ->
-                    Nothing
-    in
-    stepToNumber step
-        |> Maybe.map (\stepNum -> (12 * (octave + 1)) + stepNum + alter)
-
-
 toTuple2 : (a -> b) -> (a -> c) -> a -> ( b, c )
 toTuple2 f g v =
     ( f v, g v )
@@ -196,16 +163,6 @@ toTuple2 f g v =
 resultMapList : (a -> b) -> Result e (List a) -> Result e (List b)
 resultMapList f =
     Result.map (List.map f)
-
-
-tagPath : List String -> (Value -> Result String a) -> Value -> Result String a
-tagPath path decoder value =
-    case path of
-        [] ->
-            decoder value
-
-        p :: rest ->
-            tag p (tagPath rest decoder) value
 
 
 parseMusicXml : String -> Result String HapticScore
@@ -274,12 +231,14 @@ parseMusicXmlWith _ input =
         measuresDecoder : Value -> Result String (List Measure)
         measuresDecoder value =
             let
+                measureValues : List Value
                 measureValues =
                     tags "measure" value
 
                 partialValues =
                     measureValues
-                        |> List.map measureDecoder
+                        |> List.Extra.mapAccuml measureDecoder Nothing
+                        |> Tuple.second
                         |> Result.combine
 
                 completeMeasures : PartialMeasure -> List PartialMeasure -> Result String (List Measure)
@@ -322,8 +281,8 @@ parseMusicXmlWith _ input =
                                 completeMeasures initial rest
                     )
 
-        measureDecoder : Value -> Result String PartialMeasure
-        measureDecoder value =
+        measureDecoder : Maybe Dynamic -> Value -> ( Maybe Dynamic, Result String PartialMeasure )
+        measureDecoder previousMeasureDynamic value =
             let
                 measureNum =
                     decodeAttribute "number" int
@@ -336,23 +295,86 @@ parseMusicXmlWith _ input =
                 divisions =
                     tagPath [ "attributes", "divisions" ] int value
 
-                notes : Result String (List HapticNote)
+                combineMeasureValues :
+                    Value
+                    -> ( Maybe Dynamic, List (Result String HapticNote) )
+                    -> ( Maybe Dynamic, List (Result String HapticNote) )
+                combineMeasureValues currentTag ( lastDynamic_, ns ) =
+                    case currentTag of
+                        Tag "note" _ innerValue ->
+                            ( lastDynamic_, noteDecoder lastDynamic_ innerValue :: ns )
+
+                        Tag "direction" _ innerValue ->
+                            ( Maybe.or (directionTagDecoder innerValue) lastDynamic_, ns )
+
+                        _ ->
+                            ( lastDynamic_, ns )
+
+                directionTagDecoder : Value -> Maybe Dynamic
+                directionTagDecoder dirValue =
+                    dirValue
+                        |> tag "dynamics" dynamicsDecoder
+                        |> Result.toMaybe
+
+                dynamicsDecoder : Value -> Result String Dynamic
+                dynamicsDecoder dynValue =
+                    dynValue
+                    |> oneOfTags ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"]
+                    |> Maybe.andThen ( \dynValue_ ->
+                    case dynValue_ of
+                        Tag "ppp" _ _ ->
+                            Just Pianississimo
+
+                        Tag "pp" _ _ ->
+                            Just Pianissimo
+
+                        Tag "p" _ _ ->
+                            Just Piano
+
+                        Tag "mp" _ _ ->
+                            Just Mezzopiano
+
+                        Tag "mf" _ _ ->
+                            Just Mezzoforte
+
+                        Tag "f" _ _ ->
+                            Just Forte
+
+                        Tag "ff" _ _ ->
+                            Just Fortissimo
+
+                        Tag "fff" _ _ ->
+                            Just Fortississimo
+
+                        _ ->
+                            Nothing
+                      )
+                    |> Result.fromMaybe "dynamics value was not found"
+
+                notes : ( Maybe Dynamic, Result String (List HapticNote) )
                 notes =
                     value
-                        |> tags "note"
-                        |> List.map noteDecoder
-                        |> Result.combine
+                        |> Xml.foldl
+                            combineMeasureValues
+                            ( previousMeasureDynamic, [] )
+                        |> Tuple.mapSecond List.reverse
+                        |> Tuple.mapSecond Result.combine
+
+                ( lastDynamic, notesRes ) =
+                    notes
             in
-            ( measureNum value, notes )
-                |> Result.combineBoth
-                |> Result.map
-                    (\( num, notes_ ) ->
-                        { number = num
-                        , signature = Result.toMaybe signature
-                        , divisionsPerQuarter = Result.toMaybe divisions
-                        , notes = notes_
-                        }
-                    )
+            ( lastDynamic
+            , Result.map2
+                (\num notes_ ->
+                    { number = num
+                    , signature = Result.toMaybe signature
+                    , divisionsPerQuarter = Result.toMaybe divisions
+                    , notes = notes_
+                    }
+                )
+                (measureNum value)
+                notesRes
+            )
 
         signatureDecoder : Value -> Result String Signature
         signatureDecoder value =
@@ -368,8 +390,8 @@ parseMusicXmlWith _ input =
                 |> Result.combineBoth
                 |> Result.map (\( beats_, beatsType_ ) -> { beats = beats_, beatType = beatsType_ })
 
-        noteDecoder : Value -> Result String HapticNote
-        noteDecoder value =
+        noteDecoder : Maybe Dynamic -> Value -> Result String HapticNote
+        noteDecoder lastDynamic value =
             let
                 duration : Result String Timing
                 duration =
@@ -389,13 +411,23 @@ parseMusicXmlWith _ input =
             case duration of
                 Ok duration_ ->
                     if hasRest then
-                        Ok (Rest Nothing duration_)
+                        case lastDynamic of
+                            Just dyn ->
+                                Ok (Rest dyn duration_)
+
+                            Nothing ->
+                                Err "Encountered a rest before any dynamic signs"
 
                     else if hasNoteheadX then
-                        Ok (Hold Nothing duration_)
+                        Ok (Hold Pianississimo duration_)
 
                     else
-                        Ok (Actuate Nothing duration_)
+                        case lastDynamic of
+                            Just dyn ->
+                                Ok (Actuate dyn duration_)
+
+                            Nothing ->
+                                Err "Encountered a note before any dynamic signs"
 
                 Err e ->
                     Err e
@@ -443,7 +475,7 @@ type IntermediateAction
 type alias IntermediateRepr =
     { startTimeMs : TypedTime
     , action : IntermediateAction
-    , dynamic : Maybe Dynamic
+    , dynamic : Dynamic
     , measureNumber : Int
     }
 
@@ -482,8 +514,8 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
         absoluteTimeLines measures =
             measures
                 |> List.concatMap measureToIntermediate
-                |> List.Extra.mapAccuml durationsToAbsolutes ( TypedTime.zero, Nothing )
-                |> (\( ( lastTime, lastDynamic ), intermediates ) ->
+                |> List.Extra.mapAccuml durationsToAbsolutes TypedTime.zero
+                |> (\( lastTime, intermediates ) ->
                         let
                             lastMeasure =
                                 List.Extra.last intermediates |> Maybe.map .measureNumber
@@ -491,7 +523,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                         List.append intermediates
                             [ { startTimeMs = lastTime
                               , action = NoChange
-                              , dynamic = Just Pianississimo
+                              , dynamic = Pianississimo
                               , measureNumber = lastMeasure |> Maybe.map ((+) 1) |> Maybe.withDefault 0
                               }
                             ]
@@ -503,7 +535,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                 List
                     { duration : TypedTime
                     , action : IntermediateAction
-                    , dynamic : Maybe Dynamic
+                    , dynamic : Dynamic
                     , measureNumber : Int
                     }
         measureToIntermediate { divisionsPerQuarter, notes, number } =
@@ -522,7 +554,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
 
                 noteToIntermediate :
                     HapticNote
-                    -> { duration : TypedTime, action : IntermediateAction, dynamic : Maybe Dynamic, measureNumber : Int }
+                    -> { duration : TypedTime, action : IntermediateAction, dynamic : Dynamic, measureNumber : Int }
                 noteToIntermediate hapticNote =
                     case hapticNote of
                         Rest dynamic t ->
@@ -538,18 +570,14 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                 |> List.map noteToIntermediate
 
         durationsToAbsolutes :
-            ( TypedTime, Maybe Dynamic )
-            -> { duration : TypedTime, action : IntermediateAction, dynamic : Maybe Dynamic, measureNumber : Int }
-            -> ( ( TypedTime, Maybe Dynamic ), IntermediateRepr )
-        durationsToAbsolutes ( lastEndTime, lastDynamic ) { duration, action, dynamic, measureNumber } =
-            let
-                nextDynamic =
-                    Maybe.or dynamic lastDynamic
-            in
-            ( ( lastEndTime |> TypedTime.add duration, nextDynamic )
+            TypedTime
+            -> { duration : TypedTime, action : IntermediateAction, dynamic : Dynamic, measureNumber : Int }
+            -> ( TypedTime, IntermediateRepr )
+        durationsToAbsolutes lastEndTime { duration, action, dynamic, measureNumber } =
+            ( lastEndTime |> TypedTime.add duration
             , { startTimeMs = lastEndTime
               , action = action
-              , dynamic = nextDynamic
+              , dynamic = dynamic
               , measureNumber = measureNumber
               }
             )
@@ -653,7 +681,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                             Maybe.withDefault
                                 { startTimeMs = TypedTime.zero
                                 , action = NoChange
-                                , dynamic = Just Pianississimo
+                                , dynamic = Pianississimo
                                 , measureNumber = 0
                                 }
                                 last
@@ -723,27 +751,18 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 Release ->
                                     FlowIO.Release
 
-                        settleDynamic : Maybe Dynamic -> List (Maybe Dynamic) -> Result String Int
-                        settleDynamic initMaybeDynamic maybeDynamics =
-                            let
-                                initDynamic =
-                                    Result.fromMaybe "Expected all dynamic values to be resolved" initMaybeDynamic
-
-                                dyns =
-                                    List.map (Result.fromMaybe "Expected all dynamic values to be resolved") maybeDynamics
-                            in
+                        settleDynamic : Dynamic -> List Dynamic -> Result String Int
+                        settleDynamic initDynamic dyns =
                             List.foldl
                                 (\f result ->
-                                    Result.map2
-                                        (\f_ r_ ->
-                                            max (dynamicToInt f_) (dynamicToInt r_)
+                                    Result.andThen
+                                        (\r ->
+                                            max (dynamicToInt f) (dynamicToInt r)
                                                 |> intToDynamic
                                         )
-                                        f
                                         result
-                                        |> Result.join
                                 )
-                                initDynamic
+                                (Ok initDynamic)
                                 dyns
                                 |> Result.map dynamicToPwm
                     in
