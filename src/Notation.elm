@@ -1,18 +1,16 @@
 module Notation exposing
     ( ConversionParameters
+    , Dynamic(..)
     , HapticNote(..)
     , HapticPart
     , HapticScore
     , IntermediateAction(..)
-    , IntermediateActionForce(..)
     , IntermediateRepr
     , Measure
     , NotationParserConfiguration
     , PartID
     , PartialMeasure
     , Signature
-    , configurationToMap
-    , defaultConfiguration
     , noteToNumber
     , parseMusicXml
     , parseMusicXmlWith
@@ -20,7 +18,7 @@ module Notation exposing
     , scoreToSchedule
     , tagPath
     , toTuple2
-    , forceToPwmVal)
+    )
 
 import Array exposing (Array)
 import Dict exposing (Dict)
@@ -28,6 +26,8 @@ import Dict.Extra as Dict
 import Extra.TypedTime as TypedTime exposing (TypedTime)
 import FlowIO exposing (FlowIOAction, FlowIOCommand, PortState, portToIndex)
 import List.Extra
+import Maybe.Extra as Maybe
+import Regex
 import Result.Extra as Result
 import Scheduler
 import Set
@@ -73,31 +73,87 @@ type alias Signature =
 
 
 type HapticNote
-    = Rest Timing
-    | FullInflate Timing
-    | FastInflate Timing
-    | SlowInflate Timing
-    | SlowestInflate Timing
-    | FullRelease Timing
-    | FastRelease Timing
-    | SlowRelease Timing
-    | SlowestRelease Timing
+    = Rest (Maybe Dynamic) Timing
+    | Hold (Maybe Dynamic) Timing
+    | Actuate (Maybe Dynamic) Timing
 
 
 type alias Timing =
     Int
 
 
+type Dynamic
+    = Pianississimo
+    | Pianissimo
+    | Piano
+    | Mezzopiano
+    | Mezzoforte
+    | Forte
+    | Fortissimo
+    | Fortississimo
+
+
+dynamicToInt : Dynamic -> Int
+dynamicToInt dynamic =
+    case dynamic of
+        Pianississimo ->
+            0
+
+        Pianissimo ->
+            1
+
+        Piano ->
+            2
+
+        Mezzopiano ->
+            3
+
+        Mezzoforte ->
+            4
+
+        Forte ->
+            5
+
+        Fortissimo ->
+            6
+
+        Fortississimo ->
+            7
+
+
+intToDynamic : Int -> Result String Dynamic
+intToDynamic int =
+    case int of
+        0 ->
+            Ok Pianississimo
+
+        1 ->
+            Ok Pianissimo
+
+        2 ->
+            Ok Piano
+
+        3 ->
+            Ok Mezzopiano
+
+        4 ->
+            Ok Mezzoforte
+
+        5 ->
+            Ok Forte
+
+        6 ->
+            Ok Fortissimo
+
+        7 ->
+            Ok Fortississimo
+
+        _ ->
+            Err (String.fromInt int ++ " does not represent a valid dynamic value")
+
+
 type alias NotationParserConfiguration =
-    { fullInflatePitch : Int
-    , fastInflatePitch : Int
-    , slowInflatePitch : Int
-    , slowestInflatePitch : Int
-    , fullReleasePitch : Int
-    , fastReleasePitch : Int
-    , slowReleasePitch : Int
-    , slowestReleasePitch : Int
-    }
+    {}
 
 
 noteToNumber step octave alter =
@@ -132,33 +188,6 @@ noteToNumber step octave alter =
         |> Maybe.map (\stepNum -> (12 * (octave + 1)) + stepNum + alter)
 
 
-defaultConfiguration : NotationParserConfiguration
-defaultConfiguration =
-    { fullInflatePitch = 48 -- noteToNumber "C" 3 0
-    , fastInflatePitch = 47 -- noteToNumber "B" 2 0
-    , slowInflatePitch = 46 -- noteToNumber "B" 2 -1
-    , slowestInflatePitch = 45 -- noteToNumber "A" 2 0
-    , slowestReleasePitch = 44 -- noteToNumber "A" 2 -1
-    , slowReleasePitch = 43 -- noteToNumber "G" 2 0
-    , fastReleasePitch = 42 -- noteToNumber "G" 2 -1
-    , fullReleasePitch = 41 -- noteToNumber "F" 2 0
-    }
-
-
-configurationToMap : NotationParserConfiguration -> Dict Int (Timing -> HapticNote)
-configurationToMap conf =
-    Dict.fromList
-        [ ( conf.fullInflatePitch, FullInflate )
-        , ( conf.fastInflatePitch, FastInflate )
-        , ( conf.slowInflatePitch, SlowInflate )
-        , ( conf.slowestInflatePitch, SlowestInflate )
-        , ( conf.slowestReleasePitch, SlowestRelease )
-        , ( conf.slowReleasePitch, SlowRelease )
-        , ( conf.fastReleasePitch, FastRelease )
-        , ( conf.fullReleasePitch, FullRelease )
-        ]
-
-
 toTuple2 : (a -> b) -> (a -> c) -> a -> ( b, c )
 toTuple2 f g v =
     ( f v, g v )
@@ -181,15 +210,12 @@ tagPath path decoder value =
 
 parseMusicXml : String -> Result String HapticScore
 parseMusicXml =
-    parseMusicXmlWith defaultConfiguration
+    parseMusicXmlWith {}
 
 
 parseMusicXmlWith : NotationParserConfiguration -> String -> Result String HapticScore
-parseMusicXmlWith configuration input =
+parseMusicXmlWith _ input =
     let
-        pitchToNoteMap =
-            configurationToMap configuration
-
         decodeAttribute : String -> (Value -> Result String a) -> Value -> Result String a
         decodeAttribute attrName decoder value =
             case value of
@@ -202,7 +228,18 @@ parseMusicXmlWith configuration input =
                     Result.Err "Expected Tag value"
 
         document =
-            decode input
+            let
+                dtdTagRegex =
+                    Regex.fromString "<!DOCTYPE .*?>"
+            in
+            case dtdTagRegex of
+                Nothing ->
+                    Err "DTD regex failed compilation"
+
+                Just re ->
+                    input
+                        |> Regex.replace re (\_ -> "")
+                        |> decode
 
         decodePartName : Value -> Result String String
         decodePartName =
@@ -303,7 +340,7 @@ parseMusicXmlWith configuration input =
                 notes =
                     value
                         |> tags "note"
-                        |> List.map notesDecoder
+                        |> List.map noteDecoder
                         |> Result.combine
             in
             ( measureNum value, notes )
@@ -331,8 +368,8 @@ parseMusicXmlWith configuration input =
                 |> Result.combineBoth
                 |> Result.map (\( beats_, beatsType_ ) -> { beats = beats_, beatType = beatsType_ })
 
-        notesDecoder : Value -> Result String HapticNote
-        notesDecoder value =
+        noteDecoder : Value -> Result String HapticNote
+        noteDecoder value =
             let
                 duration : Result String Timing
                 duration =
@@ -344,61 +381,21 @@ parseMusicXmlWith configuration input =
                         |> tag "rest" (\_ -> Ok True)
                         |> Result.isOk
 
-                step : Result String String
-                step =
+                hasNoteheadX =
                     value
-                        |> tagPath [ "pitch", "step" ] string
-
-                octave : Result String Int
-                octave =
-                    value |> tagPath [ "pitch", "octave" ] int
-
-                alter : Maybe Int
-                alter =
-                    value
-                        |> tagPath [ "pitch", "alter" ] int
-                        |> Result.toMaybe
-
-                getAction : Timing -> Result String String -> Result String Int -> Maybe Int -> Result String HapticNote
-                getAction timing resStep resOctave maybeAlter =
-                    Result.map2
-                        (\stepVal octaveVal ->
-                            noteToNumber stepVal octaveVal (maybeAlter |> Maybe.withDefault 0)
-                                |> Maybe.andThen (\n -> Dict.get n pitchToNoteMap)
-                        )
-                        resStep
-                        resOctave
-                        |> Result.andThen
-                            (Result.fromMaybe
-                                ("value "
-                                    ++ (resStep
-                                            |> Result.withDefault
-                                                "<missing-step>"
-                                       )
-                                    ++ (resOctave |> Result.map String.fromInt |> Result.withDefault "<missing-octave>")
-                                    ++ (maybeAlter
-                                            |> Maybe.map
-                                                (\n ->
-                                                    if n > 0 then
-                                                        "+" ++ String.fromInt n
-
-                                                    else
-                                                        String.fromInt n
-                                                )
-                                            |> Maybe.withDefault ""
-                                       )
-                                    ++ " cannot be matched with action"
-                                )
-                            )
-                        |> Result.andMap (Ok timing)
+                        |> tag "notehead" string
+                        |> Result.unwrap False (\s -> String.trim s == "x")
             in
             case duration of
                 Ok duration_ ->
                     if hasRest then
-                        Ok (Rest duration_)
+                        Ok (Rest Nothing duration_)
+
+                    else if hasNoteheadX then
+                        Ok (Hold Nothing duration_)
 
                     else
-                        getAction duration_ step octave alter
+                        Ok (Actuate Nothing duration_)
 
                 Err e ->
                     Err e
@@ -424,7 +421,16 @@ parseMusicXmlWith configuration input =
 
 type alias ConversionParameters =
     { bpm : Int
-    , roleMapping : Dict PartID ( Scheduler.RoleName, FlowIO.Port )
+    , roleMapping : Dict String ( Scheduler.RoleName, FlowIO.Port )
+    , dynamics :
+        { pianissimo : Int
+        , piano : Int
+        , mezzopiano : Int
+        , mezzoforte : Int
+        , forte : Int
+        , fortissimo : Int
+        , fortississimo : Int
+        }
     }
 
 
@@ -434,49 +440,50 @@ type IntermediateAction
     | NoChange
 
 
-type IntermediateActionForce
-    = Full
-    | High
-    | Medium
-    | Low
-    | Irrelevant
-
-
-forceToPwmVal force =
-    case force of
-        Full ->
-            255
-
-        High ->
-            200
-
-        Medium ->
-            145
-
-        Low ->
-            90
-
-        Irrelevant ->
-            0
-
-
 type alias IntermediateRepr =
     { startTimeMs : TypedTime
     , action : IntermediateAction
-    , force : IntermediateActionForce
+    , dynamic : Maybe Dynamic
     , measureNumber : Int
     }
 
 
 scoreToSchedule : ConversionParameters -> HapticScore -> Result String Scheduler.Instructions
-scoreToSchedule { bpm, roleMapping } hapticScore =
+scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
     let
+        dynamicToPwm : Dynamic -> Int
+        dynamicToPwm dynamic =
+            case dynamic of
+                Pianississimo ->
+                    0
+
+                Pianissimo ->
+                    dynamics.pianissimo
+
+                Piano ->
+                    dynamics.piano
+
+                Mezzopiano ->
+                    dynamics.mezzopiano
+
+                Mezzoforte ->
+                    dynamics.mezzoforte
+
+                Forte ->
+                    dynamics.forte
+
+                Fortissimo ->
+                    dynamics.fortissimo
+
+                Fortississimo ->
+                    dynamics.fortississimo
+
         absoluteTimeLines : List Measure -> List IntermediateRepr
         absoluteTimeLines measures =
             measures
                 |> List.concatMap measureToIntermediate
-                |> List.Extra.mapAccuml durationsToAbsolutes TypedTime.zero
-                |> (\( lastTime, intermediates ) ->
+                |> List.Extra.mapAccuml durationsToAbsolutes ( TypedTime.zero, Nothing )
+                |> (\( ( lastTime, lastDynamic ), intermediates ) ->
                         let
                             lastMeasure =
                                 List.Extra.last intermediates |> Maybe.map .measureNumber
@@ -484,7 +491,7 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                         List.append intermediates
                             [ { startTimeMs = lastTime
                               , action = NoChange
-                              , force = Irrelevant
+                              , dynamic = Just Pianississimo
                               , measureNumber = lastMeasure |> Maybe.map ((+) 1) |> Maybe.withDefault 0
                               }
                             ]
@@ -496,7 +503,7 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                 List
                     { duration : TypedTime
                     , action : IntermediateAction
-                    , force : IntermediateActionForce
+                    , dynamic : Maybe Dynamic
                     , measureNumber : Int
                     }
         measureToIntermediate { divisionsPerQuarter, notes, number } =
@@ -515,48 +522,34 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
 
                 noteToIntermediate :
                     HapticNote
-                    -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce, measureNumber : Int }
+                    -> { duration : TypedTime, action : IntermediateAction, dynamic : Maybe Dynamic, measureNumber : Int }
                 noteToIntermediate hapticNote =
                     case hapticNote of
-                        Rest t ->
-                            { duration = toDuration t, action = NoChange, force = Irrelevant, measureNumber = number }
+                        Rest dynamic t ->
+                            { duration = toDuration t, action = Release, dynamic = dynamic, measureNumber = number }
 
-                        FullInflate t ->
-                            { duration = toDuration t, action = Inflate, force = Full, measureNumber = number }
+                        Hold dynamic t ->
+                            { duration = toDuration t, action = NoChange, dynamic = dynamic, measureNumber = number }
 
-                        FastInflate t ->
-                            { duration = toDuration t, action = Inflate, force = High, measureNumber = number }
-
-                        SlowInflate t ->
-                            { duration = toDuration t, action = Inflate, force = Medium, measureNumber = number }
-
-                        SlowestInflate t ->
-                            { duration = toDuration t, action = Inflate, force = Low, measureNumber = number }
-
-                        FullRelease t ->
-                            { duration = toDuration t, action = Release, force = Full, measureNumber = number }
-
-                        FastRelease t ->
-                            { duration = toDuration t, action = Release, force = High, measureNumber = number }
-
-                        SlowRelease t ->
-                            { duration = toDuration t, action = Release, force = Medium, measureNumber = number }
-
-                        SlowestRelease t ->
-                            { duration = toDuration t, action = Release, force = Low, measureNumber = number }
+                        Actuate dynamic t ->
+                            { duration = toDuration t, action = Inflate, dynamic = dynamic, measureNumber = number }
             in
             notes
                 |> List.map noteToIntermediate
 
         durationsToAbsolutes :
-            TypedTime
-            -> { duration : TypedTime, action : IntermediateAction, force : IntermediateActionForce, measureNumber : Int }
-            -> ( TypedTime, IntermediateRepr )
-        durationsToAbsolutes lastEndTime { duration, action, force, measureNumber } =
-            ( lastEndTime |> TypedTime.add duration
+            ( TypedTime, Maybe Dynamic )
+            -> { duration : TypedTime, action : IntermediateAction, dynamic : Maybe Dynamic, measureNumber : Int }
+            -> ( ( TypedTime, Maybe Dynamic ), IntermediateRepr )
+        durationsToAbsolutes ( lastEndTime, lastDynamic ) { duration, action, dynamic, measureNumber } =
+            let
+                nextDynamic =
+                    Maybe.or dynamic lastDynamic
+            in
+            ( ( lastEndTime |> TypedTime.add duration, nextDynamic )
             , { startTimeMs = lastEndTime
               , action = action
-              , force = force
+              , dynamic = nextDynamic
               , measureNumber = measureNumber
               }
             )
@@ -660,7 +653,7 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                             Maybe.withDefault
                                 { startTimeMs = TypedTime.zero
                                 , action = NoChange
-                                , force = Irrelevant
+                                , dynamic = Just Pianississimo
                                 , measureNumber = 0
                                 }
                                 last
@@ -730,56 +723,45 @@ scoreToSchedule { bpm, roleMapping } hapticScore =
                                 Release ->
                                     FlowIO.Release
 
-                        settleHigherForce : IntermediateActionForce -> List IntermediateActionForce -> Int
-                        settleHigherForce initForce forces =
+                        settleDynamic : Maybe Dynamic -> List (Maybe Dynamic) -> Result String Int
+                        settleDynamic initMaybeDynamic maybeDynamics =
+                            let
+                                initDynamic =
+                                    Result.fromMaybe "Expected all dynamic values to be resolved" initMaybeDynamic
+
+                                dyns =
+                                    List.map (Result.fromMaybe "Expected all dynamic values to be resolved") maybeDynamics
+                            in
                             List.foldl
                                 (\f result ->
-                                    case ( f, result ) of
-                                        ( Full, _ ) ->
-                                            Full
-
-                                        ( _, Full ) ->
-                                            Full
-
-                                        ( High, _ ) ->
-                                            High
-
-                                        ( _, High ) ->
-                                            High
-
-                                        ( Medium, _ ) ->
-                                            Medium
-
-                                        ( _, Medium ) ->
-                                            Medium
-
-                                        ( Low, _ ) ->
-                                            Low
-
-                                        ( _, Low ) ->
-                                            Low
-
-                                        _ ->
-                                            Irrelevant
+                                    Result.map2
+                                        (\f_ r_ ->
+                                            max (dynamicToInt f_) (dynamicToInt r_)
+                                                |> intToDynamic
+                                        )
+                                        f
+                                        result
+                                        |> Result.join
                                 )
-                                initForce
-                                forces
-                                |> forceToPwmVal
+                                initDynamic
+                                dyns
+                                |> Result.map dynamicToPwm
                     in
-                    settleAction p1.action [ p2.action, p3.action, p4.action, p5.action ]
-                        |> Result.map
-                            (\settledAction ->
-                                { action = toFlowIOAction settledAction
-                                , pumpPwm = settleHigherForce p1.force [ p2.force, p3.force, p4.force, p5.force ]
-                                , ports =
-                                    { port1 = FlowIO.portFromBool (settledAction /= NoChange && p1.action == settledAction)
-                                    , port2 = FlowIO.portFromBool (settledAction /= NoChange && p2.action == settledAction)
-                                    , port3 = FlowIO.portFromBool (settledAction /= NoChange && p3.action == settledAction)
-                                    , port4 = FlowIO.portFromBool (settledAction /= NoChange && p4.action == settledAction)
-                                    , port5 = FlowIO.portFromBool (settledAction /= NoChange && p5.action == settledAction)
-                                    }
+                    Result.map2
+                        (\settledDynamic settledAction ->
+                            { action = toFlowIOAction settledAction
+                            , pumpPwm = settledDynamic
+                            , ports =
+                                { port1 = FlowIO.portFromBool (settledAction /= NoChange && p1.action == settledAction)
+                                , port2 = FlowIO.portFromBool (settledAction /= NoChange && p2.action == settledAction)
+                                , port3 = FlowIO.portFromBool (settledAction /= NoChange && p3.action == settledAction)
+                                , port4 = FlowIO.portFromBool (settledAction /= NoChange && p4.action == settledAction)
+                                , port5 = FlowIO.portFromBool (settledAction /= NoChange && p5.action == settledAction)
                                 }
-                            )
+                            }
+                        )
+                        (settleDynamic p1.dynamic [ p2.dynamic, p3.dynamic, p4.dynamic, p5.dynamic ])
+                        (settleAction p1.action [ p2.action, p3.action, p4.action, p5.action ])
             in
             if List.isEmpty intermediatesList || List.length intermediatesList > 5 then
                 Err "Can only map up to five parts to a single role"
