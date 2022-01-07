@@ -23,11 +23,9 @@ oneOfTags tags value =
     case tags of
         tag :: rest ->
             value
-                |> Debug.log ("search for tag " ++ tag)
                 |> Xml.Query.tags tag
                 |> List.head
                 |> Maybe.Extra.orElseLazy (\() -> oneOfTags rest value)
-                |> Debug.log "found:"
 
         [] ->
             Nothing

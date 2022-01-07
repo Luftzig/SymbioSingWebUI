@@ -13,7 +13,6 @@ module Notation exposing
     , Signature
     , parseMusicXml
     , parseMusicXmlWith
-    , resultMapList
     , scoreToSchedule
     , toTuple2
     )
@@ -21,6 +20,7 @@ module Notation exposing
 import Array exposing (Array)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
+import Extra.Result as Result
 import Extra.TypedTime as TypedTime exposing (TypedTime)
 import Extra.Xml exposing (oneOfTags, tagPath)
 import FlowIO exposing (FlowIOAction, FlowIOCommand, PortState, portToIndex)
@@ -32,7 +32,7 @@ import Scheduler
 import Set
 import Xml exposing (Value(..))
 import Xml.Decode exposing (decode)
-import Xml.Query exposing (int, string, tag, tags)
+import Xml.Query exposing (contains, int, string, tag, tags)
 
 
 type alias HapticScore =
@@ -75,6 +75,7 @@ type HapticNote
     = Rest Dynamic Timing
     | Hold Dynamic Timing
     | Actuate Dynamic Timing
+    | Trill Timing -- Used only for the palm
 
 
 type alias Timing =
@@ -160,11 +161,6 @@ toTuple2 f g v =
     ( f v, g v )
 
 
-resultMapList : (a -> b) -> Result e (List a) -> Result e (List b)
-resultMapList f =
-    Result.map (List.map f)
-
-
 parseMusicXml : String -> Result String HapticScore
 parseMusicXml =
     parseMusicXmlWith {}
@@ -215,21 +211,19 @@ parseMusicXmlWith _ input =
         parts : Result String (Dict PartID (List Measure))
         parts =
             let
-                toMeasures : ( String, Value ) -> Result String ( String, List Measure )
-                toMeasures =
-                    Result.combineMapSecond measuresDecoder
+                partTagToMeasures : ( String, Value ) -> Result String ( String, List Measure )
+                partTagToMeasures ( partId, value ) =
+                    measuresDecoder partId value
+                        |> Result.map (\measures -> ( partId, measures ))
             in
             document
                 |> Result.map (tags "part")
-                |> resultMapList (\part -> Result.combineFirst ( decodeAttribute "id" string part, part ))
-                |> Result.andThen Result.combine
-                |> resultMapList toMeasures
-                |> Result.map Result.combine
-                |> Result.join
+                |> Result.mapList (\part -> Result.combineFirst ( decodeAttribute "id" string part, part ))
+                |> Result.mapList partTagToMeasures
                 |> Result.map Dict.fromList
 
-        measuresDecoder : Value -> Result String (List Measure)
-        measuresDecoder value =
+        measuresDecoder : PartID -> Value -> Result String (List Measure)
+        measuresDecoder partId value =
             let
                 measureValues : List Value
                 measureValues =
@@ -237,7 +231,7 @@ parseMusicXmlWith _ input =
 
                 partialValues =
                     measureValues
-                        |> List.Extra.mapAccuml measureDecoder Nothing
+                        |> List.Extra.mapAccuml (measureDecoder partId) Nothing
                         |> Tuple.second
                         |> Result.combine
 
@@ -268,7 +262,7 @@ parseMusicXmlWith _ input =
                                 )
 
                         _ ->
-                            Result.Err "First measure must specify time signature and divisions"
+                            Result.Err ("In part " ++ partId ++ ": First measure must specify time signature and divisions")
             in
             partialValues
                 |> Result.andThen
@@ -281,11 +275,20 @@ parseMusicXmlWith _ input =
                                 completeMeasures initial rest
                     )
 
-        measureDecoder : Maybe Dynamic -> Value -> ( Maybe Dynamic, Result String PartialMeasure )
-        measureDecoder previousMeasureDynamic value =
+        measureDecoder : PartID -> Maybe Dynamic -> Value -> ( Maybe Dynamic, Result String PartialMeasure )
+        measureDecoder partId previousMeasureDynamic value =
             let
                 measureNum =
-                    decodeAttribute "number" int
+                    decodeAttribute "number" int value
+
+                measureNumString =
+                    measureNum
+                        |> Result.toMaybe
+                        |> Maybe.map (\n -> "measure " ++ String.fromInt n)
+                        |> Maybe.withDefault "measure unknown"
+
+                loc =
+                    "part " ++ partId ++ ", " ++ measureNumString
 
                 signature : Result String Signature
                 signature =
@@ -302,7 +305,7 @@ parseMusicXmlWith _ input =
                 combineMeasureValues currentTag ( lastDynamic_, ns ) =
                     case currentTag of
                         Tag "note" _ innerValue ->
-                            ( lastDynamic_, noteDecoder lastDynamic_ innerValue :: ns )
+                            ( lastDynamic_, noteDecoder loc lastDynamic_ innerValue :: ns )
 
                         Tag "direction" _ innerValue ->
                             ( Maybe.or (directionTagDecoder innerValue) lastDynamic_, ns )
@@ -319,37 +322,38 @@ parseMusicXmlWith _ input =
                 dynamicsDecoder : Value -> Result String Dynamic
                 dynamicsDecoder dynValue =
                     dynValue
-                    |> oneOfTags ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"]
-                    |> Maybe.andThen ( \dynValue_ ->
-                    case dynValue_ of
-                        Tag "ppp" _ _ ->
-                            Just Pianississimo
+                        |> oneOfTags [ "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff" ]
+                        |> Maybe.andThen
+                            (\dynValue_ ->
+                                case dynValue_ of
+                                    Tag "ppp" _ _ ->
+                                        Just Pianississimo
 
-                        Tag "pp" _ _ ->
-                            Just Pianissimo
+                                    Tag "pp" _ _ ->
+                                        Just Pianissimo
 
-                        Tag "p" _ _ ->
-                            Just Piano
+                                    Tag "p" _ _ ->
+                                        Just Piano
 
-                        Tag "mp" _ _ ->
-                            Just Mezzopiano
+                                    Tag "mp" _ _ ->
+                                        Just Mezzopiano
 
-                        Tag "mf" _ _ ->
-                            Just Mezzoforte
+                                    Tag "mf" _ _ ->
+                                        Just Mezzoforte
 
-                        Tag "f" _ _ ->
-                            Just Forte
+                                    Tag "f" _ _ ->
+                                        Just Forte
 
-                        Tag "ff" _ _ ->
-                            Just Fortissimo
+                                    Tag "ff" _ _ ->
+                                        Just Fortissimo
 
-                        Tag "fff" _ _ ->
-                            Just Fortississimo
+                                    Tag "fff" _ _ ->
+                                        Just Fortississimo
 
-                        _ ->
-                            Nothing
-                      )
-                    |> Result.fromMaybe "dynamics value was not found"
+                                    _ ->
+                                        Nothing
+                            )
+                        |> Result.fromMaybe ("In " ++ loc ++ ": dynamics value was not found")
 
                 notes : ( Maybe Dynamic, Result String (List HapticNote) )
                 notes =
@@ -372,7 +376,7 @@ parseMusicXmlWith _ input =
                     , notes = notes_
                     }
                 )
-                (measureNum value)
+                measureNum
                 notesRes
             )
 
@@ -390,8 +394,8 @@ parseMusicXmlWith _ input =
                 |> Result.combineBoth
                 |> Result.map (\( beats_, beatsType_ ) -> { beats = beats_, beatType = beatsType_ })
 
-        noteDecoder : Maybe Dynamic -> Value -> Result String HapticNote
-        noteDecoder lastDynamic value =
+        noteDecoder : String -> Maybe Dynamic -> Value -> Result String HapticNote
+        noteDecoder loc lastDynamic value =
             let
                 duration : Result String Timing
                 duration =
@@ -407,6 +411,10 @@ parseMusicXmlWith _ input =
                     value
                         |> tag "notehead" string
                         |> Result.unwrap False (\s -> String.trim s == "x")
+
+                hasTrill =
+                    value
+                        |> contains (Tag "trill-mark" Dict.empty (Object []))
             in
             case duration of
                 Ok duration_ ->
@@ -416,10 +424,13 @@ parseMusicXmlWith _ input =
                                 Ok (Rest dyn duration_)
 
                             Nothing ->
-                                Err "Encountered a rest before any dynamic signs"
+                                Err ("In " ++ loc ++ ", handling rest: Encountered a rest before any dynamic signs")
 
                     else if hasNoteheadX then
                         Ok (Hold Pianississimo duration_)
+
+                    else if hasTrill then
+                        Ok (Trill duration_)
 
                     else
                         case lastDynamic of
@@ -427,7 +438,7 @@ parseMusicXmlWith _ input =
                                 Ok (Actuate dyn duration_)
 
                             Nothing ->
-                                Err "Encountered a note before any dynamic signs"
+                                Err ("In " ++ loc ++ " handling note: Encountered a note before any dynamic signs")
 
                 Err e ->
                     Err e
@@ -470,6 +481,7 @@ type IntermediateAction
     = Inflate
     | Release
     | NoChange
+    | Vibrate
 
 
 type alias IntermediateRepr =
@@ -565,6 +577,9 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
 
                         Actuate dynamic t ->
                             { duration = toDuration t, action = Inflate, dynamic = dynamic, measureNumber = number }
+
+                        Trill t ->
+                            { duration = toDuration t, action = Vibrate, dynamic = Mezzopiano, measureNumber = number }
             in
             notes
                 |> List.map noteToIntermediate
@@ -750,6 +765,9 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
 
                                 Release ->
                                     FlowIO.Release
+
+                                Vibrate ->
+                                    FlowIO.Inflate
 
                         settleDynamic : Dynamic -> List Dynamic -> Result String Int
                         settleDynamic initDynamic dyns =

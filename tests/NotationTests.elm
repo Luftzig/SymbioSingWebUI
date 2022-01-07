@@ -32,14 +32,16 @@ convertHapticScoreSuite =
         commandStop =
             { defaultCommand | action = FlowIO.Stop }
 
+        {-- Given in jumps of (255/7)
+        --}
         defaultDynamics =
-            { pianissimo = 30
-            , piano = 60
-            , mezzopiano = 90
-            , mezzoforte = 120
-            , forte = 150
-            , fortissimo = 180
-            , fortississimo = 210
+            { pianissimo = 36
+            , piano = 73
+            , mezzopiano = 109
+            , mezzoforte = 146
+            , forte = 182
+            , fortissimo = 219
+            , fortississimo = 255
             }
     in
     describe "convert haptic score to schedule"
@@ -139,7 +141,7 @@ convertHapticScoreSuite =
                                 Dict.fromList
                                     [ ( "role-1"
                                       , Array.fromList
-                                            [ commandStop
+                                            [ { commandStop | pumpPwm = defaultDynamics.mezzopiano }
                                             , { action = FlowIO.Inflate
                                               , pumpPwm = 255
                                               , ports =
@@ -285,46 +287,48 @@ parseMusicXmlSuite =
                                 , "LRib3"
                                 , "Palm"
                                 ]
-        , test "read time signature for first measure" <|
-            \_ ->
-                ifParsedContentOk testSinglePart <|
-                    \parts ->
-                        parts
-                            |> Dict.get "P1"
-                            |> Maybe.map .measures
-                            |> Maybe.andThen List.head
-                            |> Maybe.map .signature
-                            |> Expect.equal (Just { beats = 3, beatType = 8 })
-        , test "read time division for first measure" <|
-            \_ ->
-                ifParsedContentOk testSinglePart <|
-                    \parts ->
-                        parts
-                            |> Dict.get "P1"
-                            |> Maybe.map .measures
-                            |> Maybe.andThen List.head
-                            |> Maybe.map .divisionsPerQuarter
-                            |> Expect.equal (Just 16)
-        , test "read time signature for second measure which is copied from 1st" <|
-            \_ ->
-                ifParsedContentOk testSinglePart <|
-                    \parts ->
-                        parts
-                            |> Dict.get "P1"
-                            |> Maybe.map .measures
-                            |> Maybe.andThen (List.Extra.getAt 1)
-                            |> Maybe.map .signature
-                            |> Expect.equal (Just { beats = 3, beatType = 8 })
-        , test "read time division for second measure which is copied from 1st" <|
-            \_ ->
-                ifParsedContentOk testSinglePart <|
-                    \parts ->
-                        parts
-                            |> Dict.get "P1"
-                            |> Maybe.map .measures
-                            |> Maybe.andThen (List.Extra.getAt 1)
-                            |> Maybe.map .divisionsPerQuarter
-                            |> Expect.equal (Just 16)
+        , describe "time signature"
+            [ test "read time signature for first measure" <|
+                \_ ->
+                    ifParsedContentOk testSinglePart <|
+                        \parts ->
+                            parts
+                                |> Dict.get "P1"
+                                |> Maybe.map .measures
+                                |> Maybe.andThen List.head
+                                |> Maybe.map .signature
+                                |> Expect.equal (Just { beats = 3, beatType = 8 })
+            , test "read time division for first measure" <|
+                \_ ->
+                    ifParsedContentOk testSinglePart <|
+                        \parts ->
+                            parts
+                                |> Dict.get "P1"
+                                |> Maybe.map .measures
+                                |> Maybe.andThen List.head
+                                |> Maybe.map .divisionsPerQuarter
+                                |> Expect.equal (Just 16)
+            , test "read time signature for second measure which is copied from 1st" <|
+                \_ ->
+                    ifParsedContentOk testSinglePart <|
+                        \parts ->
+                            parts
+                                |> Dict.get "P1"
+                                |> Maybe.map .measures
+                                |> Maybe.andThen (List.Extra.getAt 1)
+                                |> Maybe.map .signature
+                                |> Expect.equal (Just { beats = 3, beatType = 8 })
+            , test "read time division for second measure which is copied from 1st" <|
+                \_ ->
+                    ifParsedContentOk testSinglePart <|
+                        \parts ->
+                            parts
+                                |> Dict.get "P1"
+                                |> Maybe.map .measures
+                                |> Maybe.andThen (List.Extra.getAt 1)
+                                |> Maybe.map .divisionsPerQuarter
+                                |> Expect.equal (Just 16)
+            ]
         , test "check that measure numbering is consistent" <|
             \_ ->
                 ifParsedContentOk testSinglePart <|
@@ -362,16 +366,16 @@ parseMusicXmlSuite =
         --                    |> Expect.equal (Just { beats = 3, beatType = 8 })
         , describe "parsing notes"
             [ test "parse first note" <|
-                    \_ ->
-                        ifParsedContentOk testSinglePart <|
-                            \score ->
-                                score
-                                    |> Dict.get "P1"
-                                    |> Maybe.map .measures
-                                    |> Maybe.andThen (List.Extra.getAt 0)
-                                    |> Maybe.map .notes
-                                    |> Maybe.andThen List.head
-                                    |> Expect.equal (Just (Actuate Piano 14))
+                \_ ->
+                    ifParsedContentOk testSinglePart <|
+                        \score ->
+                            score
+                                |> Dict.get "P1"
+                                |> Maybe.map .measures
+                                |> Maybe.andThen (List.Extra.getAt 0)
+                                |> Maybe.map .notes
+                                |> Maybe.andThen List.head
+                                |> Expect.equal (Just (Actuate Piano 14))
             , test "parse second note (rest)" <|
                 \_ ->
                     ifParsedContentOk testSinglePart <|
@@ -436,6 +440,42 @@ testSinglePart =
           </direction-type>
         <sound dynamics="54.44"/>
         </direction>
+      <note default-x="69.00" default-y="0.00">
+        <unpitched>
+          <display-step>E</display-step>
+          <display-octave>4</display-octave>
+          </unpitched>
+        <duration>14</duration>
+        <instrument id="P1-I82"/>
+        <voice>1</voice>
+        <type>eighth</type>
+        <dot/>
+        <dot/>
+        <stem>down</stem>
+        </note>
+      <note>
+        <rest/>
+        <duration>8</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+        </note>
+      <note default-x="69.00" default-y="-423.62">
+        <unpitched>
+          <display-step>E</display-step>
+          <display-octave>4</display-octave>
+          </unpitched>
+        <duration>2</duration>
+        <instrument id="P6-I81"/>
+        <voice>1</voice>
+        <type>32nd</type>
+        <stem>down</stem>
+        <notehead>x</notehead>
+        <beam number="1">begin</beam>
+        <beam number="2">begin</beam>
+        <beam number="3">forward hook</beam>
+        </note>
+    </measure>
+    <measure number="2" width="266.54">
       <note default-x="69.00" default-y="0.00">
         <unpitched>
           <display-step>E</display-step>
@@ -2427,6 +2467,14 @@ testContentV3 =
           <staff-lines>1</staff-lines>
           </staff-details>
         </attributes>
+      <direction placement="below">
+        <direction-type>
+          <dynamics default-x="3.25" default-y="-33.29" relative-y="-25.00">
+            <mf/>
+            </dynamics>
+          </direction-type>
+        <sound dynamics="88.89"/>
+        </direction>
       <note default-x="69.00" default-y="-709.03">
         <unpitched>
           <display-step>E</display-step>
@@ -2550,6 +2598,14 @@ testContentV3 =
           <staff-lines>1</staff-lines>
           </staff-details>
         </attributes>
+      <direction placement="below">
+        <direction-type>
+          <dynamics default-x="3.25" default-y="-33.29" relative-y="-25.00">
+            <mf/>
+            </dynamics>
+          </direction-type>
+        <sound dynamics="88.89"/>
+        </direction>
       <note>
         <rest/>
         <duration>8</duration>
@@ -3331,6 +3387,14 @@ testContentV3 =
           <staff-lines>1</staff-lines>
           </staff-details>
         </attributes>
+      <direction placement="below">
+        <direction-type>
+          <dynamics default-x="3.25" default-y="-33.29" relative-y="-25.00">
+            <mf/>
+            </dynamics>
+          </direction-type>
+        <sound dynamics="88.89"/>
+        </direction>
       <note default-x="69.00" default-y="-1136.62">
         <unpitched>
           <display-step>E</display-step>
@@ -3530,6 +3594,14 @@ testContentV3 =
           <staff-lines>1</staff-lines>
           </staff-details>
         </attributes>
+      <direction placement="below">
+        <direction-type>
+          <dynamics default-x="3.25" default-y="-33.29" relative-y="-25.00">
+            <mf/>
+            </dynamics>
+          </direction-type>
+        <sound dynamics="88.89"/>
+        </direction>
       <note default-x="69.00" default-y="-1221.34">
         <unpitched>
           <display-step>E</display-step>
