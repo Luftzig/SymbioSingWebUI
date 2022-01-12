@@ -506,8 +506,19 @@ update msg model =
             let
                 ( composerData, cmd ) =
                     Composer.update composerMsg model.composerData
+
+                oldScheduler =
+                    model.scheduler
+
+                newScheduler =
+                    { oldScheduler | composerSchedule = composerData.schedule }
             in
-            ( { model | composerData = composerData }, cmd |> Cmd.map ComposerMessage )
+            ( { model
+                | composerData = composerData
+                , scheduler = newScheduler
+              }
+            , cmd |> Cmd.map ComposerMessage
+            )
 
 
 view : Model -> Browser.Document Msg

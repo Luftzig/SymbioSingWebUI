@@ -4,12 +4,12 @@ import Color.Dracula as Dracula
 import Composer.Notation as Notation exposing (ConversionParameters, Dynamics, HapticScore, PartID, parseMusicXml)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, below, column, el, fill, fillPortion, paddingEach, paddingXY, paragraph, row, spacing, table, text, width)
+import Element exposing (Element, alignRight, below, column, el, fill, fillPortion, paddingEach, paddingXY, paragraph, px, row, spacing, table, text, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events exposing (onFocus, onLoseFocus)
 import Element.Font as Font
-import Element.Input as Input exposing (button, radioRow)
+import Element.Input as Input exposing (button, labelLeft, radioRow)
 import Extra.Resource as Resource exposing (Resource(..))
 import File exposing (File)
 import File.Download
@@ -70,6 +70,7 @@ type Msg
     | RoleSuggestionSelected PartID String
     | ConversionRequested
     | DownloadRequested Scheduler.Instructions
+    | BpmChanged String
 
 
 view : Model -> Element Msg
@@ -77,7 +78,7 @@ view model =
     column [ Styles.fullWidth, spacing 10 ]
         [ loadFile model
         , showHapticScore model.hapticScore
-        , showConversionParams model
+        , showConversionControls model
         ]
 
 
@@ -110,7 +111,7 @@ showHapticScore hapticScore =
             el [] <| text "Processing..."
 
 
-showConversionParams model =
+showConversionControls model =
     case model.hapticScore of
         Loaded score ->
             let
@@ -122,7 +123,13 @@ showConversionParams model =
                 [ showRoleMapping model idsToNames
                 , Styles.spacer
                 , row [ spacing 10 ]
-                    [ button Styles.button { label = text "Convert", onPress = Just ConversionRequested }
+                    [ Input.text (Styles.textFieldStyle ++ [ width <| px 80 ])
+                        { label = labelLeft [] <| text "BPM"
+                        , onChange = BpmChanged
+                        , text = model.bpm |> String.fromInt
+                        , placeholder = Nothing
+                        }
+                    , button Styles.button { label = text "Convert", onPress = Just ConversionRequested }
                     , case model.schedule of
                         Error e ->
                             paragraph [] [ text "error in conversion: ", text e ]
@@ -150,6 +157,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
             partNames
                 |> Dict.toList
                 |> List.map getRoleAndPort
+                |> List.sortBy (.partId >> String.replace "P" "" >> String.toInt >> Maybe.withDefault 0)
 
         getRoleAndPort ( partId, partName ) =
             { partId = partId
@@ -172,7 +180,12 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
 
         partNameColumn =
             { header = el [ Font.underline ] <| text "Part"
-            , view = \{ partName } -> el [ paddingXY 1 4 ] <| text partName
+            , view =
+                \{ partName, partId } ->
+                    row [ paddingXY 1 4, spacing 5 ]
+                        [ el [] <| text partName
+                        , el [ Font.size 10, alignRight, paddingXY 4 0 ] <| text ("(" ++ partId ++ ")")
+                        ]
             , width = fillPortion 1
             }
 
@@ -284,7 +297,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
                                 |> (\count -> count <= 1)
                     in
                     radioRow
-                        ([ paddingEach { bottom = 10, left = 1, right = 1, top = 1 }, spacing 5 ]
+                        ([ paddingEach { bottom = 10, left = 1, right = 1, top = 1 }, spacing 10 ]
                             ++ (if isLegalAssignment then
                                     []
 
@@ -419,3 +432,11 @@ update msg model =
                 "application/json"
                 (JE.encode 2 <| encodeInstructions instructions)
             )
+
+        BpmChanged string ->
+            case String.toInt string of
+                Just a ->
+                    ( { model | bpm = a }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
