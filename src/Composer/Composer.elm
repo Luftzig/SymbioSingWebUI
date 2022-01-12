@@ -17,6 +17,7 @@ import File.Select
 import FlowIO
 import Json.Encode as JE
 import Maybe.Extra as Maybe
+import Process
 import Result.Extra as Result
 import Scheduler exposing (encodeInstructions)
 import Set
@@ -67,6 +68,7 @@ type Msg
     | PartRoleNameChanged PartID String
     | RoleNameInputFieldFocused PartID
     | RoleNameInputFieldLostFocus PartID
+    | LoseFocusDelayWaited PartID
     | RoleSuggestionSelected PartID String
     | ConversionRequested
     | DownloadRequested Scheduler.Instructions
@@ -207,16 +209,9 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
                                     roleMapping
                                         |> Dict.toList
                                         |> List.filterMap (Tuple.second >> .roleName)
-                                        |> Debug.log "tooManyAssigned hasValue"
                                         |> List.filter ((==) name)
-                                        |> Debug.log "tooManyAssigned identical"
                                         |> List.length
-                                        |> Debug.log "tooManyAssigned length"
-                                        |> (\count ->
-                                                count
-                                                    > 5
-                                                    |> Debug.log "tooManyAssigned > 5"
-                                           )
+                                        |> (\count -> count > 5)
 
                                 Nothing ->
                                     False
@@ -393,6 +388,13 @@ update msg model =
             ( { model | showRolesSuggestions = Just partID }, Cmd.none )
 
         RoleNameInputFieldLostFocus partID ->
+            if model.showRolesSuggestions == Just partID then
+                ( model, Process.sleep 250 |> Task.perform (\_ -> LoseFocusDelayWaited partID) )
+
+            else
+                ( model, Cmd.none )
+
+        LoseFocusDelayWaited partID ->
             if model.showRolesSuggestions == Just partID then
                 ( { model | showRolesSuggestions = Nothing }, Cmd.none )
 
