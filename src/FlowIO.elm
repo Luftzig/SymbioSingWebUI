@@ -64,7 +64,7 @@ import Array exposing (Array)
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
-import RemoteService exposing (Service, updateCommand, updateData)
+import Extra.RemoteService as RemoteService exposing (Service, updateCommand, updateData)
 import Time
 
 

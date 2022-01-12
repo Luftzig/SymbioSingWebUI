@@ -6,7 +6,7 @@ import Expect
 import Extra.TypedTime as TypedTime
 import FlowIO exposing (defaultCommand)
 import List.Extra
-import Notation exposing (Dynamic(..), HapticNote(..), HapticScore, Measure, Signature, parseMusicXml)
+import Composer.Notation exposing (Dynamic(..), HapticNote(..), HapticScore, Measure, Signature, parseMusicXml)
 import Scheduler
 import Test exposing (..)
 

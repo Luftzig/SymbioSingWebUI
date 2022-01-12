@@ -1,4 +1,4 @@
-module Notation exposing
+module Composer.Notation exposing
     ( ConversionParameters
     , Dynamic(..)
     , HapticNote(..)
