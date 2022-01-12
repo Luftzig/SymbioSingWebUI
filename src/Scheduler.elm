@@ -1,8 +1,7 @@
-module Scheduler exposing (Instructions, Model, Msg(..), RoleName, RolesInstructions, initModel, subscriptions, update, view, encodeInstructions)
+module Scheduler exposing (Instructions, Model, Msg(..), RoleName, RolesInstructions, encodeInstructions, initModel, subscriptions, update, view)
 
 import Array exposing (Array)
 import Array.Extra as AE
-import Browser
 import Color.Dracula as Dracula
 import Dict exposing (Dict)
 import Dict.Extra
@@ -13,12 +12,12 @@ import Element.Events
 import Element.Font as Font
 import Element.Input exposing (labelAbove, labelHidden)
 import Element.Region as Region
-import Extra.TypedTime as TypedTime
+import Extra.Resource exposing (Resource(..))
+import Extra.TypedTime as TypedTime exposing (TypedTime, milliseconds)
 import File
 import File.Download
 import File.Select
 import FlowIO exposing (..)
-import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as JD
 import Json.Encode as JE
@@ -70,6 +69,7 @@ type alias Model =
         { roleEditing : RoleEditState
         , roleDeviceSelection : RoleDeviceSelectState
         }
+    , composerSchedule : Resource String Instructions
     }
 
 
@@ -88,6 +88,7 @@ initModel =
         { roleEditing = NotEditing
         , roleDeviceSelection = SelectionClosed
         }
+    , composerSchedule = NotLoaded
     }
 
 
@@ -722,6 +723,10 @@ buttons model =
             { label = El.text "Upload"
             , onPress = Just UploadInstructions
             }
+        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
+            { label = El.text "Load from Composer"
+            , onPress = Just LoadFromComposer
+            }
         ]
 
 
@@ -750,6 +755,7 @@ type Msg
     | AssociateRoleToDevice RoleName (Maybe String)
     | ChangeDeviceSelection RoleDeviceSelectState
     | Tick Posix
+    | LoadFromComposer
 
 
 createNewInstruction : Array RoleName -> Instructions -> Instructions
@@ -1131,6 +1137,19 @@ update msg model =
 
         StartInstructions posix ->
             ( { model | state = RunningInstructions { startTime = posix, commandIndex = 0 } }, Cmd.none )
+
+        LoadFromComposer ->
+            case model.composerSchedule |> Debug.log "Loading from composer" of
+                Loaded instructions ->
+                    ( { model
+                        | instructions = instructions
+                        , roles = instructions.instructions |> Dict.keys |> Array.fromList
+                      }
+                    , Cmd.none
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
 
 
 encodeInstructions : Instructions -> JE.Value
