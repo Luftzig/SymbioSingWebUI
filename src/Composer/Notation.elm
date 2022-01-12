@@ -1,6 +1,7 @@
 module Composer.Notation exposing
     ( ConversionParameters
     , Dynamic(..)
+    , Dynamics
     , HapticNote(..)
     , HapticPart
     , HapticScore
@@ -462,18 +463,21 @@ parseMusicXmlWith _ input =
             )
 
 
+type alias Dynamics =
+    { pianissimo : Int
+    , piano : Int
+    , mezzopiano : Int
+    , mezzoforte : Int
+    , forte : Int
+    , fortissimo : Int
+    , fortississimo : Int
+    }
+
+
 type alias ConversionParameters =
     { bpm : Int
     , roleMapping : Dict String ( Scheduler.RoleName, FlowIO.Port )
-    , dynamics :
-        { pianissimo : Int
-        , piano : Int
-        , mezzopiano : Int
-        , mezzoforte : Int
-        , forte : Int
-        , fortissimo : Int
-        , fortississimo : Int
-        }
+    , dynamics : Dynamics
     }
 
 

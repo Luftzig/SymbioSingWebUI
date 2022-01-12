@@ -2,7 +2,7 @@ module Styles exposing (..)
 
 import Color exposing (Color)
 import Color.Dracula as Dracula
-import Element exposing (Attribute, Color, Element, Length, alignTop, centerY, el, fill, height, htmlAttribute, none, paddingXY, px, rgb, rgb255, rgba, shrink, spacing, spacingXY, width)
+import Element exposing (Attribute, Color, Element, Length, alignTop, centerY, el, fill, height, htmlAttribute, mouseOver, none, paddingXY, px, rgb, rgb255, rgba, shrink, spacing, spacingXY, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events
@@ -52,6 +52,21 @@ borderWhite =
     Border.color Dracula.white
 
 
+elevatedShadow =
+    Border.shadow { offset = ( 1, 2 ), size = 1, blur = 3, color = darkGrey }
+
+
+spacer =
+    Element.el
+        [ height <| px 0
+        , fullWidth
+        , Border.color palette.onBackground
+        , bottomBorder
+        , elevatedShadow
+        ]
+        Element.none
+
+
 externClass : String -> Attribute msg
 externClass class =
     htmlAttribute <| Html.Attributes.class class
@@ -69,6 +84,31 @@ buttonCssIcon class description =
         ]
     <|
         none
+
+
+buttonPadding =
+    paddingXY 12 4
+
+
+button : List (Attribute msg)
+button =
+    [ buttonPadding
+    , Font.color Dracula.white
+    , Background.color Dracula.blue
+    , Border.color Dracula.white
+    , elevatedShadow
+    , Border.rounded 4
+    , mouseOver [ Border.innerGlow Dracula.purple 2 ]
+    ]
+
+
+textFieldStyle =
+    [ Background.color Dracula.black
+    , width <| shrink
+    , height <| shrink
+    , spacingXY 2 4
+    , paddingXY 2 2
+    ]
 
 
 textField :
@@ -300,6 +340,7 @@ colorsPrimary =
     , Border.color palette.onBackground
     , Font.color palette.onPrimary
     ]
+
 
 card : List (Attribute msg)
 card =

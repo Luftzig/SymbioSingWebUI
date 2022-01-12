@@ -1,4 +1,4 @@
-module Scheduler exposing (Instructions, Model, Msg(..), RoleName, RolesInstructions, initModel, subscriptions, update, view)
+module Scheduler exposing (Instructions, Model, Msg(..), RoleName, RolesInstructions, initModel, subscriptions, update, view, encodeInstructions)
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -22,7 +22,7 @@ import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as JD
 import Json.Encode as JE
-import Styles exposing (externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
+import Styles exposing (buttonPadding, externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 import Time exposing (Posix)
 import Extra.TypedTime exposing (TypedTime, milliseconds)
@@ -106,10 +106,6 @@ view model =
             , buttons model
             ]
         )
-
-
-buttonPadding =
-    El.paddingXY 12 4
 
 
 header : Model -> El.Element Msg
