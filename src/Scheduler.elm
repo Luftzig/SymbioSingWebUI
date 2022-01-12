@@ -24,7 +24,6 @@ import Json.Encode as JE
 import Styles exposing (buttonPadding, externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 import Time exposing (Posix)
-import Extra.TypedTime exposing (TypedTime, milliseconds)
 
 
 type SchedulerState
@@ -502,7 +501,7 @@ devicesTable model =
                                     )
                                     { onChange = InstructionTimeChanged index
                                     , label = "Time at step " ++ String.fromInt index
-                                    , text = TypedTime.toMillisecondsString time
+                                    , text = time |> TypedTime.toMillisecondsRounded |> String.fromInt
                                     , placeholder = Just <| Element.Input.placeholder [] <| El.text "0"
                                     , isDisabled = model.state /= Stopped
                                     , onChangeDisabled = DisabledFieldClicked "Time column disabled"
@@ -1139,7 +1138,7 @@ update msg model =
             ( { model | state = RunningInstructions { startTime = posix, commandIndex = 0 } }, Cmd.none )
 
         LoadFromComposer ->
-            case model.composerSchedule |> Debug.log "Loading from composer" of
+            case model.composerSchedule of
                 Loaded instructions ->
                     ( { model
                         | instructions = instructions
