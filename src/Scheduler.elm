@@ -361,6 +361,7 @@ schedulerRow role state index row =
         PlannedInstruction ->
             El.row (cellHeight :: border) [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []" ]
 
+
         TooManyInstructions _ numberOfRows ->
             El.el (cellHeight :: border) <| El.text ("To many rows... (" ++ String.fromInt numberOfRows ++ ")")
 
