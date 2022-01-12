@@ -1,4 +1,4 @@
-module Extra.Resource exposing (Resource(..), fromResult)
+module Extra.Resource exposing (Resource(..), fromResult, isLoaded)
 
 
 type Resource e d
@@ -16,3 +16,13 @@ fromResult result =
 
         Err error ->
             Error error
+
+
+isLoaded : Resource e d -> Bool
+isLoaded resource =
+    case resource of
+        Loaded _ ->
+            True
+
+        _ ->
+            False

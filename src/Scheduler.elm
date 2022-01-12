@@ -12,7 +12,7 @@ import Element.Events
 import Element.Font as Font
 import Element.Input exposing (labelAbove, labelHidden)
 import Element.Region as Region
-import Extra.Resource exposing (Resource(..))
+import Extra.Resource as Resource exposing (Resource(..))
 import Extra.TypedTime as TypedTime exposing (TypedTime, milliseconds)
 import File
 import File.Download
@@ -721,10 +721,14 @@ buttons model =
             { label = El.text "Upload"
             , onPress = Just UploadInstructions
             }
-        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
-            { label = El.text "Load from Composer"
-            , onPress = Just LoadFromComposer
-            }
+        , if model.composerSchedule |> Resource.isLoaded then
+            Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
+                { label = El.text "Load from Composer"
+                , onPress = Just LoadFromComposer
+                }
+
+          else
+            El.none
         ]
 
 
