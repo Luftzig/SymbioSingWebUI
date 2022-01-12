@@ -1,4 +1,4 @@
-module RemoteService exposing (Service, init, initFromCommand, updateCommand, updateData, getData, getCommand)
+module Extra.RemoteService exposing (Service, init, initFromCommand, updateCommand, updateData, getData, getCommand)
 
 {- This is modeled after the RemoteData type.
    A service is a remote provider that can receive commands and return data.

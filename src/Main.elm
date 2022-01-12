@@ -5,18 +5,19 @@ import Array.Extra
 import Browser
 import Browser.Events
 import Color.Dracula as Dracula
+import Composer.Composer as Composer
 import Element as El
 import Element.Background as UIBackground
 import Element.Border as UIBorder
 import Element.Font as UIFont
 import Element.Input as UIInput
 import Element.Region as UIRegion
+import Extra.RemoteService as RemoteService
 import FlowIO exposing (..)
 import Html
 import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
-import RemoteService
 import Scheduler
 import Sensors
 import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, vacuumButton)
@@ -35,6 +36,7 @@ type alias Model =
         }
     , openTab : MainTab
     , sensorData : Sensors.Model
+    , composerData : Composer.Model
     , windowSize : { width : Int, height : Int }
     }
 
@@ -47,6 +49,7 @@ type PanelState
 type MainTab
     = SchedulerTab
     | SensorReadingsTab
+    | ComposerTab
 
 
 type Msg
@@ -75,6 +78,7 @@ type Msg
     | SensorReadingTimestampAttached Int ( Time.Posix, AnalogReadings )
     | SensorReadingModeChanged Int AnalogServiceRequest
     | SensorsMessage Sensors.Msg
+    | ComposerMessage Composer.Msg
     | ChangeTabTo MainTab
     | WindowDimensionsChanged Int Int
     | NoAction String
@@ -92,6 +96,7 @@ initModel { width, height } =
         }
     , openTab = SchedulerTab
     , sensorData = Sensors.initialModel
+    , composerData = Composer.init
     , windowSize = { width = width, height = height }
     }
 
@@ -497,6 +502,13 @@ update msg model =
             , requestAnalogReadings deviceIndex analogServiceRequest
             )
 
+        ComposerMessage composerMsg ->
+            let
+                ( composerData, cmd ) =
+                    Composer.update composerMsg model.composerData
+            in
+            ( { model | composerData = composerData }, cmd |> Cmd.map ComposerMessage )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -529,7 +541,7 @@ body model =
 
 
 tabs : Model -> El.Element Msg
-tabs { scheduler, sensorData, openTab, windowSize, servicesPanel } =
+tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel } =
     let
         tabSize =
             if servicesPanel.panelState == PanelFolded then
@@ -569,6 +581,12 @@ tabs { scheduler, sensorData, openTab, windowSize, servicesPanel } =
                         "Sensors"
                 , onPress = Just <| ChangeTabTo SensorReadingsTab
                 }
+            , UIInput.button (tabStyle (openTab == ComposerTab))
+                { label =
+                    El.text
+                        "Composer"
+                , onPress = Just <| ChangeTabTo ComposerTab
+                }
             ]
         , case openTab of
             SchedulerTab ->
@@ -577,6 +595,9 @@ tabs { scheduler, sensorData, openTab, windowSize, servicesPanel } =
 
             SensorReadingsTab ->
                 El.map SensorsMessage <| Sensors.view sensorData
+
+            ComposerTab ->
+                El.map ComposerMessage <| Composer.view composerData
         ]
 
 
