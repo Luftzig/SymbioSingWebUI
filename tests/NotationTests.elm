@@ -1,12 +1,12 @@
 module NotationTests exposing (..)
 
 import Array
+import Composer.Notation as Notation exposing (Dynamic(..), HapticNote(..), HapticScore, Measure, Signature, parseMusicXml)
 import Dict
 import Expect
 import Extra.TypedTime as TypedTime
 import FlowIO exposing (defaultCommand)
 import List.Extra
-import Composer.Notation exposing (Dynamic(..), HapticNote(..), HapticScore, Measure, Signature, parseMusicXml)
 import Scheduler
 import Test exposing (..)
 
@@ -32,7 +32,7 @@ convertHapticScoreSuite =
         commandStop =
             { defaultCommand | action = FlowIO.Stop }
 
-        {-- Given in jumps of (255/7)
+        {--Given in jumps of (255/7)
         --}
         defaultDynamics =
             { pianissimo = 36
@@ -210,14 +210,351 @@ convertHapticScoreSuite =
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
+            , test "port closing is correct" <|
+                \_ ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P2"
+                                  , { name = "test-name"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Actuate Fortississimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Hold Fortissimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Rest Mezzoforte (baseMeasure.divisionsPerQuarter * 2)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions =
+                            { time =
+                                Array.fromList
+                                    [ TypedTime.milliseconds 0
+                                    , TypedTime.seconds 0.5
+                                    , TypedTime.seconds 1
+                                    , TypedTime.seconds 2
+                                    ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-2"
+                                      , Array.fromList
+                                            [ { action = FlowIO.Inflate
+                                              , pumpPwm = defaultDynamics.fortississimo
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen }
+                                              }
+                                            , { action = FlowIO.Stop
+                                              , pumpPwm = defaultDynamics.fortissimo
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortClosed }
+                                              }
+                                            , { action = FlowIO.Release
+                                              , pumpPwm = defaultDynamics.mezzoforte
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen }
+                                              }
+                                            , commandStop
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping = Dict.fromList [ ( "P2", ( "role-2", FlowIO.Port1 ) ) ]
+                        , dynamics = defaultDynamics
+                        }
+                        score
+                        |> Expect.equal (Ok expectedInstructions)
             ]
         , describe "two parts"
-            [ todo "empty parts"
-            , todo "one empty part, one part with instructions"
-            , todo "two synchronous parts"
-            , todo "one part inflates other part hold"
-            , todo "settle parts force"
-            , todo "two parts different times"
+            [ test "empty parts" <|
+                \() ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "test-name"
+                                    , measures =
+                                        []
+                                    }
+                                  )
+                                , ( "P2"
+                                  , { name = "test part 2"
+                                    , measures = []
+                                    }
+                                  )
+                                ]
+
+                        emptyInstructions : Scheduler.Instructions
+                        emptyInstructions =
+                            { time = Array.fromList [ TypedTime.milliseconds 0 ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1", Array.fromList [ commandStop ] )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 100
+                        , roleMapping =
+                            Dict.fromList
+                                [ ( "P1", ( "role-1", FlowIO.Port1 ) )
+                                , ( "P2", ( "role-1", FlowIO.Port2 ) )
+                                ]
+                        , dynamics = defaultDynamics
+                        }
+                        score
+                        |> Expect.equal (Ok emptyInstructions)
+            , test "two synchronous parts" <|
+                \() ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "part 1"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Actuate Fortississimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Rest Mezzoforte (baseMeasure.divisionsPerQuarter * 3)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                , ( "P2"
+                                  , { name = "part 2"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Actuate Fortississimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Rest Mezzoforte (baseMeasure.divisionsPerQuarter * 3)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions =
+                            { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 0.5, TypedTime.seconds 2 ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            [ { action = FlowIO.Inflate
+                                              , pumpPwm = defaultDynamics.fortississimo
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen, port2 = FlowIO.PortOpen }
+                                              }
+                                            , { action = FlowIO.Release
+                                              , pumpPwm = defaultDynamics.mezzoforte
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen, port2 = FlowIO.PortOpen }
+                                              }
+                                            , commandStop
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping =
+                            Dict.fromList
+                                [ ( "P1", ( "role-1", FlowIO.Port1 ) )
+                                , ( "P2", ( "role-1", FlowIO.Port2 ) )
+                                ]
+                        , dynamics = defaultDynamics
+                        }
+                        score
+                        |> Expect.equal (Ok expectedInstructions)
+            , test "one part inflates other part hold" <|
+                \() ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "part 1"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Actuate Fortississimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Actuate Mezzoforte (baseMeasure.divisionsPerQuarter * 3)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                , ( "P2"
+                                  , { name = "part 2"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Hold Fortississimo (baseMeasure.divisionsPerQuarter * 4)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions =
+                            { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 0.5, TypedTime.seconds 2 ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            [ { action = FlowIO.Inflate
+                                              , pumpPwm = defaultDynamics.fortississimo
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen }
+                                              }
+                                            , { action = FlowIO.Inflate
+                                              , pumpPwm = defaultDynamics.mezzoforte
+                                              , ports =
+                                                    { portsAllClosed | port1 = FlowIO.PortOpen }
+                                              }
+                                            , commandStop
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping =
+                            Dict.fromList
+                                [ ( "P1", ( "role-1", FlowIO.Port1 ) )
+                                , ( "P2", ( "role-1", FlowIO.Port2 ) )
+                                ]
+                        , dynamics = defaultDynamics
+                        }
+                        score
+                        |> Expect.equal (Ok expectedInstructions)
+            , only <|
+                test "complex two parts" <|
+                    \() ->
+                        let
+                            score : HapticScore
+                            score =
+                                {- p1 = inflate - hold - inflate - release - hold
+                                   p2 = hold - inflate - hold - hold - release
+                                -}
+                                Dict.fromList
+                                    [ ( "P1"
+                                      , { name = "part 1"
+                                        , measures =
+                                            [ { baseMeasure
+                                                | notes =
+                                                    [ Actuate Fortississimo (baseMeasure.divisionsPerQuarter * 1)
+                                                    , Hold Mezzoforte (baseMeasure.divisionsPerQuarter * 1)
+                                                    , Actuate Mezzoforte (baseMeasure.divisionsPerQuarter * 1)
+                                                    , Rest Forte (baseMeasure.divisionsPerQuarter * 1)
+                                                    ]
+                                              }
+                                            , { baseMeasure
+                                                | notes =
+                                                    [ Hold Forte (baseMeasure.divisionsPerQuarter * 1)
+                                                    ]
+                                                , number = 2
+                                              }
+                                            ]
+                                        }
+                                      )
+                                    , ( "P2"
+                                      , { name = "part 2"
+                                        , measures =
+                                            [ { baseMeasure
+                                                | notes =
+                                                    [ Hold Fortississimo (baseMeasure.divisionsPerQuarter * 1)
+                                                    , Actuate Mezzoforte (baseMeasure.divisionsPerQuarter * 1)
+                                                    , Hold Mezzoforte (baseMeasure.divisionsPerQuarter * 2)
+                                                    ]
+                                              }
+                                            , { baseMeasure
+                                                | notes =
+                                                    [ Rest Forte (baseMeasure.divisionsPerQuarter * 1)
+                                                    ]
+                                                , number = 2
+                                              }
+                                            ]
+                                        }
+                                      )
+                                    ]
+
+                            expectedInstructions : Scheduler.Instructions
+                            expectedInstructions =
+                                { time =
+                                    Array.fromList
+                                        [ TypedTime.milliseconds 0
+                                        , TypedTime.seconds 0.5
+                                        , TypedTime.seconds 1
+                                        , TypedTime.seconds 1.5
+                                        , TypedTime.seconds 2
+                                        , TypedTime.seconds 2.5
+                                        ]
+                                , instructions =
+                                    Dict.fromList
+                                        [ ( "role-1"
+                                            {- p1 = inflate fff - hold mf - inflate mf - release f - hold f
+                                               p2 = hold fff - inflate mf - hold mf - hold mf - release f
+                                            -}
+                                          , Array.fromList
+                                                [ { action = FlowIO.Inflate
+                                                  , pumpPwm = defaultDynamics.fortississimo
+                                                  , ports =
+                                                        { portsAllClosed | port1 = FlowIO.PortOpen }
+                                                  }
+                                                , { action = FlowIO.Inflate
+                                                  , pumpPwm = defaultDynamics.mezzoforte
+                                                  , ports =
+                                                        { portsAllClosed | port2 = FlowIO.PortOpen }
+                                                  }
+                                                , { action = FlowIO.Inflate
+                                                  , pumpPwm = defaultDynamics.mezzoforte
+                                                  , ports =
+                                                        { portsAllClosed | port1 = FlowIO.PortOpen }
+                                                  }
+                                                , { action = FlowIO.Release
+                                                  , pumpPwm = defaultDynamics.forte
+                                                  , ports =
+                                                        { portsAllClosed | port1 = FlowIO.PortOpen }
+                                                  }
+                                                , { action = FlowIO.Release
+                                                  , pumpPwm = defaultDynamics.forte
+                                                  , ports =
+                                                        { portsAllClosed | port2 = FlowIO.PortOpen }
+                                                  }
+                                                , commandStop
+                                                ]
+                                          )
+                                        ]
+                                }
+                        in
+                        Notation.scoreToSchedule
+                            { bpm = 120
+                            , roleMapping =
+                                Dict.fromList
+                                    [ ( "P1", ( "role-1", FlowIO.Port1 ) )
+                                    , ( "P2", ( "role-1", FlowIO.Port2 ) )
+                                    ]
+                            , dynamics = defaultDynamics
+                            }
+                            score
+                            |> Expect.equal (Ok expectedInstructions)
             ]
         ]
 

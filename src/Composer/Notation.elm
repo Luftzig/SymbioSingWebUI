@@ -526,10 +526,10 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                 Fortississimo ->
                     dynamics.fortississimo
 
-        absoluteTimeLines : List Measure -> List IntermediateRepr
-        absoluteTimeLines measures =
+        absoluteTimeLines : String -> List Measure -> List IntermediateRepr
+        absoluteTimeLines partName measures =
             measures
-                |> List.concatMap measureToIntermediate
+                |> List.concatMap (measureToIntermediate partName)
                 |> List.Extra.mapAccuml durationsToAbsolutes TypedTime.zero
                 |> (\( lastTime, intermediates ) ->
                         let
@@ -546,7 +546,8 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                    )
 
         measureToIntermediate :
-            Measure
+            String
+            -> Measure
             ->
                 List
                     { duration : TypedTime
@@ -554,7 +555,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                     , dynamic : Dynamic
                     , measureNumber : Int
                     }
-        measureToIntermediate { divisionsPerQuarter, notes, number } =
+        measureToIntermediate partName { divisionsPerQuarter, notes, number } =
             let
                 durationPerDivision =
                     let
@@ -624,6 +625,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                             (\{ name, role, port_, measures } ->
                                 { intermediates =
                                     absoluteTimeLines
+                                        name
                                         measures
                                 , name = name
                                 , port_ = port_
@@ -667,7 +669,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
             Scheduler.RoleName
             -> List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port }
             -> Result String (Array FlowIO.FlowIOCommand)
-        convertToInstructions _ intermediatesList =
+        convertToInstructions roleName intermediatesList =
             let
                 getByPort p =
                     List.Extra.find (\{ port_ } -> port_ == p) intermediatesList
@@ -713,7 +715,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
 
                             else
                                 { default | startTimeMs = t }
-                                    :: fillInstructionLists restTimes last restIntermediates
+                                    :: fillInstructionLists restTimes last (inter :: restIntermediates)
 
                         ( t :: restTimes, [] ) ->
                             { default | startTimeMs = t }
@@ -753,7 +755,13 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                             Ok Release
 
                                         _ ->
-                                            Err ("Problem in measure " ++ String.fromInt p1.measureNumber ++ ": conflicting actions")
+                                            Err
+                                                ("Problem in "
+                                                    ++ roleName
+                                                    ++ ", measure "
+                                                    ++ String.fromInt p1.measureNumber
+                                                    ++ ": conflicting actions"
+                                                )
                                 )
                                 (Ok a1)
                                 restActions
@@ -773,17 +781,26 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 Vibrate ->
                                     FlowIO.Inflate
 
-                        settleDynamic : Dynamic -> List Dynamic -> Result String Int
+                        settleDynamic : Dynamic -> List ( IntermediateAction, Dynamic ) -> Result String Int
                         settleDynamic initDynamic dyns =
+                            let
+                                decideDynamic : ( IntermediateAction, Dynamic ) -> Result String Dynamic -> Result String Dynamic
+                                decideDynamic =
+                                    \( currentAction, currentDynamic ) acc ->
+                                        acc
+                                            |> Result.andThen
+                                                (\accDynamic ->
+                                                    case currentAction of
+                                                        NoChange ->
+                                                            Ok accDynamic
+
+                                                        _ ->
+                                                            max (dynamicToInt accDynamic) (dynamicToInt currentDynamic)
+                                                                |> intToDynamic
+                                                )
+                            in
                             List.foldl
-                                (\f result ->
-                                    Result.andThen
-                                        (\r ->
-                                            max (dynamicToInt f) (dynamicToInt r)
-                                                |> intToDynamic
-                                        )
-                                        result
-                                )
+                                decideDynamic
                                 (Ok initDynamic)
                                 dyns
                                 |> Result.map dynamicToPwm
@@ -801,7 +818,13 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 }
                             }
                         )
-                        (settleDynamic p1.dynamic [ p2.dynamic, p3.dynamic, p4.dynamic, p5.dynamic ])
+                        (settleDynamic p1.dynamic
+                            [ ( p2.action, p2.dynamic )
+                            , ( p3.action, p3.dynamic )
+                            , ( p4.action, p4.dynamic )
+                            , ( p5.action, p5.dynamic )
+                            ]
+                        )
                         (settleAction p1.action [ p2.action, p3.action, p4.action, p5.action ])
             in
             if List.isEmpty intermediatesList || List.length intermediatesList > 5 then
