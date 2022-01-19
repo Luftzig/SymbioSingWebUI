@@ -1,4 +1,6 @@
-import {Elm} from "./Main.elm"
+import "./src/style.css"
+import "./src/svgbuttons.css"
+import {Elm} from "./src/Main.elm"
 import {DEFAULT_SERVICES, FlowIo} from "flow-io-web-lib"
 import ControlService from "flow-io-web-lib/lib/services/controlService"
 import {ConfigService} from "flow-io-web-lib/lib/services/configService"

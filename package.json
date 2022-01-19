@@ -12,11 +12,13 @@
     "not dead"
   ],
   "scripts": {
-    "start": "node ./serve.js",
-    "watch": "node ./build.js --watch",
-    "build": "node ./build.js",
-    "test": "elm-test",
-    "test-watch": "elm-test --watch"
+    "postinstall": "elm-tooling install",
+    "start": "vite",
+    "prebuild": "elm-tooling install",
+    "build": "vite build src",
+    "serve": "vite preview",
+    "test": "elm-test-rs",
+    "test-watch": "elm-test-rs --watch"
   },
   "dependencies": {
     "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#development",
@@ -25,8 +27,11 @@
   "devDependencies": {
     "elm": "^0.19.1-5",
     "elm-test": "^0.19.1-revision7",
+    "elm-tooling": "^1.7.0",
     "esbuild": "^0.13.13",
     "esbuild-plugin-copy": "^0.2.0",
-    "esbuild-plugin-elm": "^0.0.6"
+    "esbuild-plugin-elm": "^0.0.6",
+    "vite": "^2.7.13",
+    "vite-plugin-elm": "^2.5.1"
   }
 }
