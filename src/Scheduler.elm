@@ -1,4 +1,4 @@
-module Scheduler exposing (Instructions, Model, Msg(..), RoleName, RolesInstructions, encodeInstructions, initModel, subscriptions, update, view)
+module Scheduler exposing (Effect(..), Instructions, Model, Msg(..), RoleName, RolesInstructions, encodeInstructions, initModel, subscriptions, update, view)
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -760,6 +760,11 @@ type Msg
     | LoadFromComposer
 
 
+type Effect
+    = NoEffect
+    | LogError String
+
+
 createNewInstruction : Array RoleName -> Instructions -> Instructions
 createNewInstruction roles { time, instructions } =
     let
@@ -801,7 +806,7 @@ arrayMove origin target arr =
         |> Maybe.withDefault arr
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> ( Model, Effect, Cmd Msg )
 update msg model =
     let
         updateInstructionForRole :
@@ -857,16 +862,21 @@ update msg model =
     case msg of
         AddInstruction ->
             ( { model | instructions = createNewInstruction model.roles model.instructions }
+            , NoEffect
             , Cmd.none
             )
 
         DeleteLastInstruction ->
             ( { model | instructions = deleteLastInstruction model.instructions }
+            , NoEffect
             , Cmd.none
             )
 
         ResetInstructions ->
-            ( { model | instructions = emptyInstructions }, Cmd.none )
+            ( { model | instructions = emptyInstructions }
+            , NoEffect
+            , Cmd.none
+            )
 
         InstructionTimeChanged instructionIndex newValue ->
             let
@@ -878,6 +888,7 @@ update msg model =
                             , instructions = model.instructions.instructions
                             }
                       }
+                    , NoEffect
                     , Cmd.none
                     )
             in
@@ -890,13 +901,14 @@ update msg model =
                         updateNewTime 0
 
                     else
-                        ( model, Cmd.none )
+                        ( model, NoEffect, Cmd.none )
 
         ActionChanged role index flowIOAction ->
             ( { model
                 | instructions =
                     updateInstructionForRole index role (\inst -> { inst | action = flowIOAction }) model.instructions
               }
+            , NoEffect
             , Cmd.none
             )
 
@@ -911,11 +923,12 @@ update msg model =
                                 (\inst -> { inst | pumpPwm = newPwm })
                                 model.instructions
                       }
+                    , NoEffect
                     , Cmd.none
                     )
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    ( model, NoEffect, Cmd.none )
 
         PortStateChanged role index port_ checked ->
             ( { model
@@ -926,14 +939,16 @@ update msg model =
                         (\inst -> { inst | ports = updatePort port_ checked inst.ports })
                         model.instructions
               }
+            , NoEffect
             , Cmd.none
             )
 
         RunInstructions ->
-            ( model, Task.perform StartInstructions Time.now )
+            ( model, NoEffect, Task.perform StartInstructions Time.now )
 
         DownloadInstructions ->
             ( model
+            , NoEffect
             , File.Download.string
                 "flowio-schedule.json"
                 "application/json"
@@ -941,10 +956,10 @@ update msg model =
             )
 
         UploadInstructions ->
-            ( model, File.Select.file [ "application/json" ] UploadSelected )
+            ( model, NoEffect, File.Select.file [ "application/json" ] UploadSelected )
 
         UploadSelected file ->
-            ( model, Task.perform FileRead <| File.toString file )
+            ( model, NoEffect, Task.perform FileRead <| File.toString file )
 
         FileRead content ->
             let
@@ -957,15 +972,15 @@ update msg model =
                         | instructions = instructions
                         , roles = Dict.keys instructions.instructions |> Array.fromList
                       }
+                    , NoEffect
                     , Cmd.none
                     )
 
                 Err error ->
-                    Debug.log (JD.errorToString error)
-                        ( model, Cmd.none )
+                    ( model, LogError (JD.errorToString error), Cmd.none )
 
         DisabledFieldClicked _ ->
-            ( model, Cmd.none )
+            ( model, NoEffect, Cmd.none )
 
         AddRole roleName ->
             ( { model
@@ -978,15 +993,16 @@ update msg model =
                             model.instructions.instructions
                     }
               }
+            , NoEffect
             , Cmd.none
             )
 
         RemoveRole index ->
             -- TODO: Remove role from instructions as well
-            ( { model | roles = AE.removeAt index model.roles }, Cmd.none )
+            ( { model | roles = AE.removeAt index model.roles }, NoEffect, Cmd.none )
 
         ReorderRole originalIndex newIndex ->
-            ( { model | roles = arrayMove originalIndex newIndex model.roles }, Cmd.none )
+            ( { model | roles = arrayMove originalIndex newIndex model.roles }, NoEffect, Cmd.none )
 
         AssociateRoleToDevice roleName maybeDeviceId ->
             let
@@ -997,6 +1013,7 @@ update msg model =
                 | roleDeviceMapping = Dict.update roleName (\_ -> maybeDeviceId) model.roleDeviceMapping
                 , display = { display | roleDeviceSelection = SelectionClosed }
               }
+            , NoEffect
             , Cmd.none
             )
 
@@ -1025,43 +1042,44 @@ update msg model =
                             , instructions = replaceKey oldRole model.instructions.instructions
                             }
                       }
+                    , NoEffect
                     , Cmd.none
                     )
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    ( model, NoEffect, Cmd.none )
 
         EditRole roleIndex ->
             let
                 display =
                     model.display
             in
-            ( { model | display = { display | roleEditing = Editing roleIndex } }, Cmd.none )
+            ( { model | display = { display | roleEditing = Editing roleIndex } }, NoEffect, Cmd.none )
 
         EndRoleEditing ->
             let
                 display =
                     model.display
             in
-            ( { model | display = { display | roleEditing = NotEditing } }, Cmd.none )
+            ( { model | display = { display | roleEditing = NotEditing } }, NoEffect, Cmd.none )
 
         ChangeDeviceSelection roleDeviceSelectState ->
             let
                 display =
                     model.display
             in
-            ( { model | display = { display | roleDeviceSelection = roleDeviceSelectState } }, Cmd.none )
+            ( { model | display = { display | roleDeviceSelection = roleDeviceSelectState } }, NoEffect, Cmd.none )
 
         StopInstructions ->
-            ( { model | state = Stopped }, Cmd.none )
+            ( { model | state = Stopped }, NoEffect, Cmd.none )
 
         Tick posix ->
             case model.state of
                 Paused record ->
-                    Debug.todo "Pausing not implemented yet"
+                    ( model, LogError "Paused is not impelmented", Cmd.none )
 
                 Stopped ->
-                    ( model, Cmd.none )
+                    ( model, NoEffect, Cmd.none )
 
                 RunningInstructions { startTime, commandIndex } ->
                     let
@@ -1071,6 +1089,7 @@ update msg model =
                         currentCommandTime =
                             Array.get commandIndex model.instructions.time
                     in
+                    -- TODO: This can be simplified by saving just the remaining instructions
                     case currentCommandTime of
                         Just currentTime ->
                             if elapsedTime >= TypedTime.toMillisecondsRounded currentTime then
@@ -1125,20 +1144,21 @@ update msg model =
                                             |> List.map createCommand
                                 in
                                 ( { model | state = RunningInstructions { startTime = startTime, commandIndex = commandIndex + 1 } }
+                                , NoEffect
                                 , Cmd.batch
                                     commands
                                 )
 
                             else
                                 -- Do nothing, wait for the next clock tick
-                                ( model, Cmd.none )
+                                ( model, NoEffect, Cmd.none )
 
                         Nothing ->
                             -- There is no next command, so we are done!
-                            ( { model | state = Stopped }, Cmd.none )
+                            ( { model | state = Stopped }, NoEffect, Cmd.none )
 
         StartInstructions posix ->
-            ( { model | state = RunningInstructions { startTime = posix, commandIndex = 0 } }, Cmd.none )
+            ( { model | state = RunningInstructions { startTime = posix, commandIndex = 0 } }, NoEffect, Cmd.none )
 
         LoadFromComposer ->
             case model.composerSchedule of
@@ -1147,11 +1167,12 @@ update msg model =
                         | instructions = instructions
                         , roles = instructions.instructions |> Dict.keys |> Array.fromList
                       }
+                    , NoEffect
                     , Cmd.none
                     )
 
                 _ ->
-                    ( model, Cmd.none )
+                    ( model, NoEffect, Cmd.none )
 
 
 encodeInstructions : Instructions -> JE.Value

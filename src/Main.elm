@@ -38,7 +38,15 @@ type alias Model =
     , sensorData : Sensors.Model
     , composerData : Composer.Model
     , windowSize : { width : Int, height : Int }
+    , errorLog : List String
+    , errorLogState : ErrorLogState
     }
+
+
+type ErrorLogState
+    = LogHasUnread Int
+    | LogClosedAndRead
+    | LogOpen
 
 
 type PanelState
@@ -82,6 +90,7 @@ type Msg
     | ChangeTabTo MainTab
     | WindowDimensionsChanged Int Int
     | NoAction String
+    | ToggleErrorLog
 
 
 initModel : { width : Int, height : Int } -> Model
@@ -98,6 +107,8 @@ initModel { width, height } =
     , sensorData = Sensors.initialModel
     , composerData = Composer.init
     , windowSize = { width = width, height = height }
+    , errorLog = []
+    , errorLogState = LogClosedAndRead
     }
 
 
@@ -181,6 +192,21 @@ update msg model =
                     model.servicesPanel
             in
             { servicesPanel | services = List.filter (\( index, _ ) -> index /= deviceIndex) servicesPanel.services }
+
+        logError error =
+            { model
+                | errorLog = error :: model.errorLog
+                , errorLogState =
+                    case model.errorLogState of
+                        LogHasUnread n ->
+                            LogHasUnread (n + 1)
+
+                        LogClosedAndRead ->
+                            LogHasUnread 1
+
+                        LogOpen ->
+                            LogOpen
+            }
     in
     case msg of
         ConnectToDevice deviceIndex ->
@@ -308,8 +334,8 @@ update msg model =
         AddDevice ->
             ( updateDevices (Array.push defaultDevice model.devices) model, createDevice () )
 
-        RemoveDevice index ->
-            Debug.todo "TODO: How should we handle removed devices?"
+        RemoveDevice _ ->
+            ( logError "Removing devices is not supported at the moment", Cmd.none )
 
         SendCommand deviceIndex command ->
             -- TODO: Maybe we should update the model to reflect that?
@@ -345,10 +371,18 @@ update msg model =
 
         SchedulerMessage message ->
             let
-                ( scheduler, cmd ) =
+                ( scheduler, effect, cmd ) =
                     Scheduler.update message model.scheduler
+
+                effectedModel =
+                    case effect of
+                        Scheduler.NoEffect ->
+                            model
+
+                        Scheduler.LogError string ->
+                            logError string
             in
-            ( { model | scheduler = scheduler }, Cmd.map SchedulerMessage cmd )
+            ( { effectedModel | scheduler = scheduler }, Cmd.map SchedulerMessage cmd )
 
         ActionClicked deviceIndex action ->
             let
@@ -520,6 +554,22 @@ update msg model =
             , cmd |> Cmd.map ComposerMessage
             )
 
+        ToggleErrorLog ->
+            ( { model
+                | errorLogState =
+                    case model.errorLogState of
+                        LogHasUnread _ ->
+                            LogOpen
+
+                        LogClosedAndRead ->
+                            LogOpen
+
+                        LogOpen ->
+                            LogClosedAndRead
+              }
+            , Cmd.none
+            )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -547,7 +597,7 @@ body model =
                 , displayServices model
                 , tabs model
                 ]
-            , footer
+            , footer model
             ]
 
 
@@ -1264,6 +1314,55 @@ header =
         El.text "SymbioSing Control Panel"
 
 
-footer : El.Element Msg
-footer =
-    El.el [ El.alignBottom, El.height <| El.px 24 ] El.none
+footer : Model -> El.Element Msg
+footer { errorLog, errorLogState } =
+    let
+        errors =
+            case errorLogState of
+                LogOpen ->
+                    El.column
+                        [ UIBackground.color Styles.palette.background
+                        , UIBorder.color Styles.palette.onBackground
+                        , UIBorder.width 1
+                        , Styles.elevatedShadow
+                        , El.width <| El.px 440
+                        , El.padding 4
+                        ]
+                        (El.row [ fullWidth ]
+                            [ UIInput.button [ El.alignRight ]
+                                { onPress = Just ToggleErrorLog
+                                , label = El.text "X"
+                                }
+                            ]
+                            :: List.map (El.el [] << El.text) errorLog
+                        )
+
+                _ ->
+                    El.none
+
+        errorCount =
+            case List.length errorLog of
+                0 ->
+                    [ El.text "No Errors" ]
+
+                _ ->
+                    [ El.el [] <| El.text <| String.fromInt <| List.length errorLog
+                    , El.text " Errors"
+                    , case errorLogState of
+                        LogHasUnread n ->
+                            El.el
+                                [ UIBackground.color Dracula.red
+                                , UIFont.color Dracula.white
+                                , UIBorder.rounded 4
+                                ]
+                            <|
+                                El.text (String.fromInt n ++ " new")
+
+                        _ ->
+                            El.none
+                    ]
+    in
+    El.row [ El.alignBottom, El.height <| El.px 24 ]
+        [ El.el [ El.alignLeft, El.above errors ] <|
+            UIInput.button [] { onPress = Just ToggleErrorLog, label = El.row [] errorCount }
+        ]
