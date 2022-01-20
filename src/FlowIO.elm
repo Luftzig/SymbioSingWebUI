@@ -34,6 +34,7 @@ port module FlowIO exposing
     , listenToDeviceStatus
     , listenToPowerOffStatus
     , portFromBool
+    , portToIndex
     , queryDeviceConfiguration
     , queryPowerOffStatus
     , requestAnalogReadings
@@ -58,13 +59,13 @@ port module FlowIO exposing
     , setPumpPwm
     , setStatusTo
     , updateCommandFromStatus
-    , portToIndex)
+    )
 
 import Array exposing (Array)
+import Extra.RemoteService as RemoteService exposing (Service, updateCommand, updateData)
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
-import Extra.RemoteService as RemoteService exposing (Service, updateCommand, updateData)
 import Time
 
 
@@ -523,9 +524,9 @@ pwmValueDecoder =
     JD.field "pumpPwm" JD.int
         |> JD.andThen
             (\i ->
-                case ( i < 100, i > 255 ) of
+                case ( i < 0, i > 255 ) of
                     ( True, _ ) ->
-                        JD.fail "Expected 'pwmVal' to be at least 100"
+                        JD.fail "Expected 'pwmVal' to be positive"
 
                     ( _, True ) ->
                         JD.fail "Expected 'pwmVal' to be at most 255"

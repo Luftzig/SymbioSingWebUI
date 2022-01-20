@@ -1,0 +1,102 @@
+{
+  "time": [
+    0,
+    200,
+    3500,
+    4000
+  ],
+  "instructions": {
+    "Role 1": [
+      {
+        "action": "vacuum",
+        "pumpPwm": 255,
+        "ports": [
+          false,
+          false,
+          false,
+          true,
+          false
+        ]
+      },
+      {
+        "action": "stop",
+        "pumpPwm": 255,
+        "ports": [
+          false,
+          false,
+          false,
+          true,
+          false
+        ]
+      },
+      {
+        "action": "release",
+        "pumpPwm": 255,
+        "ports": [
+          false,
+          false,
+          false,
+          true,
+          false
+        ]
+      },
+      {
+        "action": "stop",
+        "pumpPwm": 255,
+        "ports": [
+          false,
+          false,
+          false,
+          true,
+          false
+        ]
+      }
+    ],
+    "Role 2": [
+      {
+        "action": "inflate",
+        "pumpPwm": 0,
+        "ports": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "action": "inflate",
+        "pumpPwm": 0,
+        "ports": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "action": "stop",
+        "pumpPwm": 255,
+        "ports": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "action": "stop",
+        "pumpPwm": 255,
+        "ports": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      }
+    ]
+  }
+}
