@@ -5,7 +5,7 @@ import Array.Extra
 import Browser
 import Browser.Events
 import Color.Dracula as Dracula
-import Composer.Composer as Composer
+import Composer.Converter as Converter
 import Element as El
 import Element.Background as UIBackground
 import Element.Border as UIBorder
@@ -36,7 +36,7 @@ type alias Model =
         }
     , openTab : MainTab
     , sensorData : Sensors.Model
-    , composerData : Composer.Model
+    , composerData : Converter.Model
     , windowSize : { width : Int, height : Int }
     , errorLog : List String
     , errorLogState : ErrorLogState
@@ -57,7 +57,7 @@ type PanelState
 type MainTab
     = SchedulerTab
     | SensorReadingsTab
-    | ComposerTab
+    | NotationConverterTab
 
 
 type Msg
@@ -86,7 +86,7 @@ type Msg
     | SensorReadingTimestampAttached Int ( Time.Posix, AnalogReadings )
     | SensorReadingModeChanged Int AnalogServiceRequest
     | SensorsMessage Sensors.Msg
-    | ComposerMessage Composer.Msg
+    | ComposerMessage Converter.Msg
     | ChangeTabTo MainTab
     | WindowDimensionsChanged Int Int
     | NoAction String
@@ -105,7 +105,7 @@ initModel { width, height } =
         }
     , openTab = SchedulerTab
     , sensorData = Sensors.initialModel
-    , composerData = Composer.init
+    , composerData = Converter.init
     , windowSize = { width = width, height = height }
     , errorLog = []
     , errorLogState = LogClosedAndRead
@@ -539,7 +539,7 @@ update msg model =
         ComposerMessage composerMsg ->
             let
                 ( composerData, cmd ) =
-                    Composer.update composerMsg model.composerData
+                    Converter.update composerMsg model.composerData
 
                 oldScheduler =
                     model.scheduler
@@ -642,11 +642,11 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel }
                         "Sensors"
                 , onPress = Just <| ChangeTabTo SensorReadingsTab
                 }
-            , UIInput.button (tabStyle (openTab == ComposerTab))
+            , UIInput.button (tabStyle (openTab == NotationConverterTab))
                 { label =
                     El.text
-                        "Composer"
-                , onPress = Just <| ChangeTabTo ComposerTab
+                        "Convert Score"
+                , onPress = Just <| ChangeTabTo NotationConverterTab
                 }
             ]
         , case openTab of
@@ -657,8 +657,8 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel }
             SensorReadingsTab ->
                 El.map SensorsMessage <| Sensors.view sensorData
 
-            ComposerTab ->
-                El.map ComposerMessage <| Composer.view composerData
+            NotationConverterTab ->
+                El.map ComposerMessage <| Converter.view composerData
         ]
 
 

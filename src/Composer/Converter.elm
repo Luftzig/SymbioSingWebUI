@@ -1,10 +1,10 @@
-module Composer.Composer exposing (Model, Msg, init, update, view)
+module Composer.Converter exposing (Model, Msg, init, update, view)
 
 import Color.Dracula as Dracula
-import Composer.Notation as Notation exposing (ConversionParameters, Dynamics, HapticScore, PartID, parseMusicXml)
+import Composer.Notation as Notation exposing (ConversionParameters, Dynamic(..), Dynamics, HapticScore, PartID, parseMusicXml)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignRight, below, column, el, fill, fillPortion, paddingEach, paddingXY, paragraph, px, row, spacing, table, text, width)
+import Element exposing (Element, alignRight, below, column, el, fill, fillPortion, padding, paddingEach, paddingXY, paragraph, px, row, spacing, table, text, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events exposing (onFocus, onLoseFocus)
@@ -33,6 +33,7 @@ type alias Model =
     , dynamics : Dynamics
     , showRolesSuggestions : Maybe PartID
     , schedule : Resource String Scheduler.Instructions
+    , targetName : String
     }
 
 
@@ -45,6 +46,7 @@ init =
     , dynamics = defaultDynamics
     , showRolesSuggestions = Nothing
     , schedule = NotLoaded
+    , targetName = ""
     }
 
 
@@ -73,6 +75,7 @@ type Msg
     | ConversionRequested
     | DownloadRequested Scheduler.Instructions
     | BpmChanged String
+    | UpdateDynamic Dynamic Float
 
 
 view : Model -> Element Msg
@@ -121,35 +124,74 @@ showConversionControls model =
                 idsToNames =
                     Dict.map (\_ -> .name) score
             in
-            column [ spacing 10 ]
-                [ showRoleMapping model idsToNames
-                , Styles.spacer
-                , row [ spacing 10 ]
-                    [ Input.text (Styles.textFieldStyle ++ [ width <| px 80 ])
-                        { label = labelLeft [] <| text "BPM"
-                        , onChange = BpmChanged
-                        , text = model.bpm |> String.fromInt
-                        , placeholder = Nothing
-                        }
-                    , button Styles.button { label = text "Convert", onPress = Just ConversionRequested }
-                    , case model.schedule of
-                        Error e ->
-                            paragraph [] [ text "error in conversion: ", text e ]
+            row [ spacing 28, Styles.fullWidth ]
+                [ column [ spacing 10, width <| fillPortion 1 ]
+                    [ showRoleMapping model idsToNames
+                    , Styles.spacer
+                    , row [ spacing 10 ]
+                        [ Input.text (Styles.textFieldStyle ++ [ width <| px 80 ])
+                            { label = labelLeft [] <| text "BPM"
+                            , onChange = BpmChanged
+                            , text = model.bpm |> String.fromInt
+                            , placeholder = Nothing
+                            }
+                        , button Styles.button { label = text "Convert", onPress = Just ConversionRequested }
+                        , case model.schedule of
+                            Error e ->
+                                paragraph [] [ text "error in conversion: ", text e ]
 
-                        NotLoaded ->
-                            Element.none
+                            NotLoaded ->
+                                Element.none
 
-                        Processing ->
-                            text "Processing"
+                            Processing ->
+                                text "Processing"
 
-                        Loaded schedule ->
-                            button Styles.button
-                                { label = text "Download", onPress = Just <| DownloadRequested schedule }
+                            Loaded schedule ->
+                                button Styles.button
+                                    { label = text "Download", onPress = Just <| DownloadRequested schedule }
+                        ]
                     ]
+                , showDynamicsControls model
                 ]
 
         _ ->
             Element.none
+
+
+showDynamicsControls { dynamics } =
+    let
+        dynamicsSlider msgType label getter =
+            row [ spacing 5, Styles.fullWidth ]
+                [ el [ width <| fillPortion 1 ] <| text label
+                , Input.slider
+                    [ width <| px 263
+                    , Background.color Styles.palette.primary
+                    , Border.rounded 10
+                    , Border.color Styles.palette.onBackground
+                    , Border.width 1
+                    , width <| fillPortion 10
+                    ]
+                    { onChange = UpdateDynamic msgType
+                    , label = labelLeft [ alignRight, width<| fillPortion 1 ] <| text <| String.fromInt (getter dynamics)
+                    , value = toFloat <| getter dynamics
+                    , thumb = Input.defaultThumb
+                    , step = Just 1.0
+                    , min = 0
+                    , max = 255
+                    }
+                ]
+    in
+    column [ spacing 10, width <| fillPortion 1 ]
+        [ el [ Styles.bottomBorder ] <| text "Dynamics"
+        , dynamicsSlider Pianissimo "pp" .pianissimo
+        , dynamicsSlider Piano "p" .piano
+        , dynamicsSlider Mezzopiano "mp" .mezzopiano
+        , dynamicsSlider Mezzoforte "mf" .mezzoforte
+        , dynamicsSlider Mezzoforte "mf" .mezzoforte
+        , dynamicsSlider Forte "f" .forte
+        , dynamicsSlider Fortissimo "ff" .fortissimo
+        , dynamicsSlider Fortississimo "fff" .fortississimo
+        ]
 
 
 showRoleMapping : Model -> Dict Notation.PartID String -> Element Msg
@@ -442,3 +484,36 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        UpdateDynamic dynamic value ->
+            let
+                dynamics =
+                    model.dynamics
+
+                newDynamics =
+                    case dynamic of
+                        Pianississimo ->
+                            dynamics
+
+                        Pianissimo ->
+                            { dynamics | pianissimo = round value }
+
+                        Piano ->
+                            { dynamics | piano = round value }
+
+                        Mezzopiano ->
+                            { dynamics | mezzopiano = round value }
+
+                        Mezzoforte ->
+                            { dynamics | mezzoforte = round value }
+
+                        Forte ->
+                            { dynamics | forte = round value }
+
+                        Fortissimo ->
+                            { dynamics | fortissimo = round value }
+
+                        Fortississimo ->
+                            { dynamics | fortississimo = round value }
+            in
+            ( { model | dynamics = newDynamics }, Cmd.none )
