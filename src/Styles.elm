@@ -94,6 +94,7 @@ button : List (Attribute msg)
 button =
     [ buttonPadding
     , Font.color Dracula.white
+    , Font.center
     , Background.color Dracula.blue
     , Border.color Dracula.white
     , elevatedShadow
@@ -216,6 +217,8 @@ palette =
     , onBackground = Dracula.white
     , onPrimary = Dracula.black
     , secondary = Dracula.green
+    , error = Dracula.red
+    , onError = Dracula.white
     }
 
 

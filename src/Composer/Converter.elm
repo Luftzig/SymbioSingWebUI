@@ -4,7 +4,7 @@ import Color.Dracula as Dracula
 import Composer.Notation as Notation exposing (ConversionParameters, Dynamic(..), Dynamics, HapticScore, PartID, parseMusicXml)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignRight, below, column, el, fill, fillPortion, padding, paddingEach, paddingXY, paragraph, px, row, spacing, table, text, width)
+import Element exposing (Element, alignRight, below, column, el, fill, fillPortion, padding, paddingEach, paddingXY, paragraph, px, row, shrink, spacing, table, text, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events exposing (onFocus, onLoseFocus)
@@ -18,6 +18,7 @@ import FlowIO
 import Json.Encode as JE
 import Maybe.Extra as Maybe
 import Process
+import Regex exposing (Regex)
 import Result.Extra as Result
 import Scheduler exposing (encodeInstructions)
 import Set
@@ -76,6 +77,7 @@ type Msg
     | DownloadRequested Scheduler.Instructions
     | BpmChanged String
     | UpdateDynamic Dynamic Float
+    | NameChanged String
 
 
 view : Model -> Element Msg
@@ -129,27 +131,37 @@ showConversionControls model =
                     [ showRoleMapping model idsToNames
                     , Styles.spacer
                     , row [ spacing 10 ]
-                        [ Input.text (Styles.textFieldStyle ++ [ width <| px 80 ])
-                            { label = labelLeft [] <| text "BPM"
+                        [ Input.text (Styles.textFieldStyle ++ [ width <| fillPortion 1 ])
+                            { label = labelLeft [ width shrink ] <| text "BPM"
                             , onChange = BpmChanged
                             , text = model.bpm |> String.fromInt
                             , placeholder = Nothing
                             }
-                        , button Styles.button { label = text "Convert", onPress = Just ConversionRequested }
-                        , case model.schedule of
-                            Error e ->
-                                paragraph [] [ text "error in conversion: ", text e ]
-
-                            NotLoaded ->
-                                Element.none
-
-                            Processing ->
-                                text "Processing"
-
-                            Loaded schedule ->
-                                button Styles.button
-                                    { label = text "Download", onPress = Just <| DownloadRequested schedule }
+                        , Input.text (Styles.textFieldStyle ++ [ width <| fillPortion 3 ])
+                            { label = labelLeft [ width shrink ] <| text "Name"
+                            , onChange = NameChanged
+                            , text = model.targetName
+                            , placeholder = Nothing
+                            }
+                        , button ((width <| fillPortion 1) :: Font.center :: Styles.button)
+                            { label = text "Convert", onPress = Just ConversionRequested }
                         ]
+                    , case model.schedule of
+                        Error e ->
+                            paragraph []
+                                [ text "error in conversion: "
+                                , el [ Font.color Styles.palette.error ] <| text e
+                                ]
+
+                        NotLoaded ->
+                            Element.none
+
+                        Processing ->
+                            text "Processing ⏱"
+
+                        Loaded schedule ->
+                            button ((width <| fillPortion 1) :: Styles.button)
+                                { label = text "Download", onPress = Just <| DownloadRequested schedule }
                     ]
                 , showDynamicsControls model
                 ]
@@ -172,7 +184,7 @@ showDynamicsControls { dynamics } =
                     , width <| fillPortion 10
                     ]
                     { onChange = UpdateDynamic msgType
-                    , label = labelLeft [ alignRight, width<| fillPortion 1 ] <| text <| String.fromInt (getter dynamics)
+                    , label = labelLeft [ alignRight, width <| fillPortion 1 ] <| text <| String.fromInt (getter dynamics)
                     , value = toFloat <| getter dynamics
                     , thumb = Input.defaultThumb
                     , step = Just 1.0
@@ -362,6 +374,11 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
         }
 
 
+removeExtension : Maybe Regex
+removeExtension =
+    Regex.fromString "\\.[^.]+$"
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
@@ -392,6 +409,18 @@ update msg model =
             ( { model
                 | sourceFile = Just file
                 , hapticScore = Processing
+                , targetName =
+                    file
+                        |> File.name
+                        |> (\name ->
+                                case removeExtension of
+                                    Just re ->
+                                        Regex.replace re (Basics.always "") name
+
+                                    _ ->
+                                        name
+                           )
+                        |> (\name -> name ++ "-schedule.json")
               }
             , File.toString file
                 |> Task.andThen (parseMusicXml >> Result.toTask)
@@ -472,7 +501,7 @@ update msg model =
         DownloadRequested instructions ->
             ( model
             , File.Download.string
-                "flowio-schedule.json"
+                model.targetName
                 "application/json"
                 (JE.encode 2 <| encodeInstructions instructions)
             )
@@ -517,3 +546,6 @@ update msg model =
                             { dynamics | fortississimo = round value }
             in
             ( { model | dynamics = newDynamics }, Cmd.none )
+
+        NameChanged newName ->
+            ( { model | targetName = newName }, Cmd.none )
