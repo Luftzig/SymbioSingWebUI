@@ -16,6 +16,7 @@ import File.Download
 import File.Select
 import FlowIO
 import Json.Encode as JE
+import LocalStorage
 import Maybe.Extra as Maybe
 import Process
 import Regex exposing (Regex)
@@ -78,6 +79,7 @@ type Msg
     | BpmChanged String
     | UpdateDynamic Dynamic Float
     | NameChanged String
+    | SaveSchedule String Scheduler.Instructions
 
 
 view : Model -> Element Msg
@@ -160,8 +162,12 @@ showConversionControls model =
                             text "Processing ⏱"
 
                         Loaded schedule ->
-                            button ((width <| fillPortion 1) :: Styles.button)
-                                { label = text "Download", onPress = Just <| DownloadRequested schedule }
+                            row [ Styles.fullWidth, spacing 10 ]
+                                [ button ((width <| fillPortion 1) :: Styles.button)
+                                    { label = text "Download", onPress = Just <| DownloadRequested schedule }
+                                , button ((width <| fillPortion 1) :: Styles.button)
+                                    { label = text "Save", onPress = Just <| SaveSchedule model.targetName schedule }
+                                ]
                     ]
                 , showDynamicsControls model
                 ]
@@ -549,3 +555,7 @@ update msg model =
 
         NameChanged newName ->
             ( { model | targetName = newName }, Cmd.none )
+
+        SaveSchedule key instructions ->
+            (model, LocalStorage.save key (encodeInstructions instructions))
+

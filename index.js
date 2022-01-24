@@ -1,11 +1,12 @@
 import "./src/style.css"
 import "./src/svgbuttons.css"
 import {Elm} from "./src/Main.elm"
-import {DEFAULT_SERVICES, FlowIo} from "flow-io-web-lib"
+import {FlowIo} from "flow-io-web-lib"
 import ControlService from "flow-io-web-lib/lib/services/controlService"
 import {ConfigService} from "flow-io-web-lib/lib/services/configService"
 import {PowerOffService} from "flow-io-web-lib/lib/services/powerOffService"
-import {AnalogService} from "flow-io-web-lib/lib/services/analogService"
+
+import LocalStorage from "./src/localStorage"
 
 const flowIoDevices /*: FlowIo[]*/ = []
 
@@ -13,6 +14,8 @@ let app = Elm.Main.init({
   node: document.getElementById('app-root')
   , flags: {width: window.innerWidth, height: window.innerHeight}
 });
+
+LocalStorage.wire(app)
 
 app.ports.createDevice.subscribe(() => {
   const flowIo = new FlowIo({

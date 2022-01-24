@@ -10,6 +10,8 @@ import Element.Font as Font
 import Element.Input as Input exposing (OptionState(..))
 import Element.Region as Region
 import Html.Attributes
+import Html.Events
+import Json.Decode
 import Maybe.Extra
 
 
@@ -351,3 +353,7 @@ card =
     , Border.width 1
     , paddingXY 4 3
     ]
+
+onFocusOut : msg -> Attribute msg
+onFocusOut msg =
+    Element.htmlAttribute <| Html.Events.on "focusout" (Json.Decode.succeed msg)

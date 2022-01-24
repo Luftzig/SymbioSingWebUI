@@ -18,8 +18,10 @@ import Html
 import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
-import Scheduler
+import LocalStorage
+import Scheduler exposing (IncomingMsg(..))
 import Sensors
+import Set exposing (Set)
 import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, vacuumButton)
 import Task
 import Time
@@ -40,6 +42,8 @@ type alias Model =
     , windowSize : { width : Int, height : Int }
     , errorLog : List String
     , errorLogState : ErrorLogState
+    , savedMenuState : PanelState
+    , savedSchedules : Set String
     }
 
 
@@ -52,6 +56,16 @@ type ErrorLogState
 type PanelState
     = PanelFolded
     | PanelOpen
+
+
+togglePanel : PanelState -> PanelState
+togglePanel state =
+    case state of
+        PanelOpen ->
+            PanelFolded
+
+        PanelFolded ->
+            PanelOpen
 
 
 type MainTab
@@ -91,6 +105,10 @@ type Msg
     | WindowDimensionsChanged Int Int
     | NoAction String
     | ToggleErrorLog
+    | ScheduleLoaded String String
+    | ReceivedSavedSchedules (List String)
+    | ToggleSavedMenu
+    | SavedScheduleRequested String
 
 
 initModel : { width : Int, height : Int } -> Model
@@ -109,6 +127,8 @@ initModel { width, height } =
     , windowSize = { width = width, height = height }
     , errorLog = []
     , errorLogState = LogClosedAndRead
+    , savedMenuState = PanelFolded
+    , savedSchedules = Set.empty
     }
 
 
@@ -121,7 +141,14 @@ sendMessage msg =
 main : Program { width : Int, height : Int } Model Msg
 main =
     Browser.document
-        { init = \windowSize -> ( initModel windowSize, sendMessage AddDevice )
+        { init =
+            \windowSize ->
+                ( initModel windowSize
+                , Cmd.batch
+                    [ sendMessage AddDevice
+                    , LocalStorage.getAllKeys ()
+                    ]
+                )
         , subscriptions = subscriptions
         , update = update
         , view = view
@@ -142,6 +169,15 @@ subscriptions model =
                             False
                 )
                 model.listeners
+
+        localStorageListener : LocalStorage.StorageEvent -> Msg
+        localStorageListener event =
+            case event of
+                LocalStorage.Loaded key value ->
+                    ScheduleLoaded key (Debug.log "Loaded value" value)
+
+                LocalStorage.ReceivedAllKeys strings ->
+                    ReceivedSavedSchedules strings
     in
     Sub.batch
         ([ listenToDeviceStatus DeviceStatusChanged
@@ -150,6 +186,7 @@ subscriptions model =
          , listenToPowerOffStatus DevicePowerOffStatusChange
          , listenToAnalogReadings SensorReadingReceived
          , Browser.Events.onResize WindowDimensionsChanged
+         , LocalStorage.listen localStorageListener
          ]
             ++ (if shouldListenToControlService then
                     [ listenToDeviceControlStatus ControlServiceUpdate ]
@@ -207,6 +244,34 @@ update msg model =
                         LogOpen ->
                             LogOpen
             }
+
+        handleSchedulerUpdate messageToScheduler =
+            let
+                ( scheduler, effect, cmd ) =
+                    Scheduler.update messageToScheduler model.scheduler
+
+                ( effectedModel, effectedCmd ) =
+                    case effect of
+                        Scheduler.NoEffect ->
+                            ( model, Cmd.none )
+
+                        Scheduler.LogError string ->
+                            ( logError string, Cmd.none )
+
+                        Scheduler.AskSaveInstructions key value ->
+                            ( { model | savedSchedules = Set.insert key model.savedSchedules }
+                            , Cmd.batch
+                                [ LocalStorage.save key value
+                                , LocalStorage.getAllKeys ()
+                                ]
+                            )
+            in
+            ( { effectedModel | scheduler = scheduler }
+            , Cmd.batch
+                [ Cmd.map SchedulerMessage cmd
+                , effectedCmd
+                ]
+            )
     in
     case msg of
         ConnectToDevice deviceIndex ->
@@ -370,19 +435,15 @@ update msg model =
             ( updateCommand deviceIndex newCommand, Cmd.none )
 
         SchedulerMessage message ->
-            let
-                ( scheduler, effect, cmd ) =
-                    Scheduler.update message model.scheduler
+            handleSchedulerUpdate message
 
-                effectedModel =
-                    case effect of
-                        Scheduler.NoEffect ->
-                            model
+        ScheduleLoaded key value ->
+            case Json.Decode.decodeString Scheduler.instructionsDecoder value of
+                Ok newInstructions ->
+                    handleSchedulerUpdate (Scheduler.send <| InstructionsLoaded key newInstructions)
 
-                        Scheduler.LogError string ->
-                            logError string
-            in
-            ( { effectedModel | scheduler = scheduler }, Cmd.map SchedulerMessage cmd )
+                Err error ->
+                    ( logError (Json.Decode.errorToString error), Cmd.none )
 
         ActionClicked deviceIndex action ->
             let
@@ -540,16 +601,9 @@ update msg model =
             let
                 ( composerData, cmd ) =
                     Converter.update composerMsg model.composerData
-
-                oldScheduler =
-                    model.scheduler
-
-                newScheduler =
-                    { oldScheduler | composerSchedule = composerData.schedule }
             in
             ( { model
                 | composerData = composerData
-                , scheduler = newScheduler
               }
             , cmd |> Cmd.map ComposerMessage
             )
@@ -569,6 +623,15 @@ update msg model =
               }
             , Cmd.none
             )
+
+        ReceivedSavedSchedules strings ->
+            ( { model | savedSchedules = Set.fromList strings }, Cmd.none )
+
+        ToggleSavedMenu ->
+            ( { model | savedMenuState = togglePanel model.savedMenuState }, Cmd.none )
+
+        SavedScheduleRequested key ->
+            ( model, LocalStorage.load key )
 
 
 view : Model -> Browser.Document Msg
@@ -591,7 +654,7 @@ body model =
         ]
     <|
         El.column [ El.width <| El.fill, El.height <| El.fill, El.spacing 10 ]
-            [ header
+            [ header model
             , El.row [ El.spacing 10, El.width El.fill, El.height <| El.fillPortion 10, El.alignTop ]
                 [ displayDeviceList model
                 , displayServices model
@@ -895,7 +958,7 @@ displayServices { devices, servicesPanel } =
                 }
 
         actions : (FlowIOAction -> Msg) -> FlowIOAction -> El.Element Msg
-        actions onMouseDown currentValue =
+        actions onMouseDown _ =
             El.row [ El.spacing 5, El.padding 5 ]
                 [ inflateButton (onMouseDown Inflate) ActionReleased
                 , vacuumButton (onMouseDown Vacuum) ActionReleased
@@ -923,7 +986,7 @@ displayServices { devices, servicesPanel } =
                 ]
 
         displayStatusDetailsDetails : Int -> ControlServiceStatus -> El.Element Msg
-        displayStatusDetailsDetails deviceIndex details =
+        displayStatusDetailsDetails _ details =
             let
                 displayPort label status =
                     El.el
@@ -1034,7 +1097,7 @@ displayServices { devices, servicesPanel } =
                 }
 
         displayBatteryService : Int -> FlowIODevice -> El.Element Msg
-        displayBatteryService index device =
+        displayBatteryService _ _ =
             El.none
 
         displayPowerOffService : Int -> FlowIODevice -> El.Element Msg
@@ -1276,7 +1339,7 @@ displayServices { devices, servicesPanel } =
                             BatteryService ->
                                 displayBatteryService deviceIndex device
 
-                            UnknownService string ->
+                            UnknownService _ ->
                                 El.none
 
                             PowerOffService ->
@@ -1308,10 +1371,47 @@ displayServices { devices, servicesPanel } =
         )
 
 
-header : El.Element Msg
-header =
-    El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <|
-        El.text "SymbioSing Control Panel"
+header : Model -> El.Element Msg
+header { savedMenuState, savedSchedules } =
+    let
+        savedMenu =
+            case savedMenuState of
+                PanelFolded ->
+                    El.none
+
+                PanelOpen ->
+                    Set.toList savedSchedules
+                        |> List.filter (not << String.isEmpty)
+                        |> List.map savedItem
+                        |> El.column
+                            (Styles.card
+                                ++ Styles.colorsNormal
+                                ++ [ Styles.elevatedShadow
+                                   , Styles.onFocusOut ToggleSavedMenu
+                                   ]
+                            )
+
+        savedItem key =
+            UIInput.button Styles.button
+                { onPress = Just <| SavedScheduleRequested key
+                , label = El.text key
+                }
+    in
+    El.row [ fullWidth, El.centerX, El.alignTop ]
+        [ El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <|
+            El.text "SymbioSing Control Panel"
+        , El.el [ El.alignRight, El.below savedMenu ] <|
+            UIInput.button (Styles.button ++ [ El.alignRight ])
+                { onPress = Just ToggleSavedMenu
+                , label =
+                    case savedMenuState of
+                        PanelFolded ->
+                            El.text "Saved Schedules ◀️"
+
+                        PanelOpen ->
+                            El.text "Saved Schedules ⏏️"
+                }
+        ]
 
 
 footer : Model -> El.Element Msg
@@ -1334,7 +1434,7 @@ footer { errorLog, errorLogState } =
                                 , label = El.text "X"
                                 }
                             ]
-                            :: List.map (El.el [] << El.text) errorLog
+                            :: List.map (El.el [ fullWidth ] << El.text) errorLog
                         )
 
                 _ ->
