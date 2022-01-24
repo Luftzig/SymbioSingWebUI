@@ -1,9 +1,7 @@
 function wire(app) {
-  const storage = (window).localStorage
   const {saveInternal, remove, load, loaded, getAllKeys, receivedAllKeys} = app.ports
 
   saveInternal?.subscribe(([key, value]) => {
-      console.log("saveInternal: key, value: ", key, value)
       localStorage.setItem(key, JSON.stringify(value))
     }
   )
@@ -14,7 +12,6 @@ function wire(app) {
 
   load?.subscribe(key => {
     const item = localStorage.getItem(key)
-    console.log("load: key, item", key, item, JSON.parse(item))
     loaded.send([key, JSON.parse(item)])
   })
 

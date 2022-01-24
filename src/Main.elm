@@ -1386,9 +1386,7 @@ header { savedMenuState, savedSchedules } =
                         |> El.column
                             (Styles.card
                                 ++ Styles.colorsNormal
-                                ++ [ Styles.elevatedShadow
-                                   , Styles.onFocusOut ToggleSavedMenu
-                                   ]
+                                ++ [ Styles.elevatedShadow ]
                             )
 
         savedItem key =

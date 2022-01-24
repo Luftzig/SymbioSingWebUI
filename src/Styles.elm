@@ -9,6 +9,7 @@ import Element.Events
 import Element.Font as Font
 import Element.Input as Input exposing (OptionState(..))
 import Element.Region as Region
+import Html
 import Html.Attributes
 import Html.Events
 import Json.Decode
@@ -354,6 +355,15 @@ card =
     , paddingXY 4 3
     ]
 
+
 onFocusOut : msg -> Attribute msg
 onFocusOut msg =
     Element.htmlAttribute <| Html.Events.on "focusout" (Json.Decode.succeed msg)
+
+
+clickOutside : msg -> List (Html.Attribute msg) -> Element msg -> Element msg
+clickOutside onClickOutside attrs content =
+    Element.html <|
+        Html.node "click-outside"
+            (attrs ++ [ Html.Events.on "click-outside" (Json.Decode.succeed onClickOutside) ])
+            [ Element.layout [] content ]
