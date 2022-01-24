@@ -1,8 +1,12 @@
 module Images exposing (..)
 
-import Color
+import Color exposing (Color)
+import Color.Dracula as Dracule
+import Element exposing (Element)
 import FlowIO
 import Html
+import Material.Icons
+import Material.Icons.Types exposing (Coloring(..))
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
 
@@ -284,3 +288,39 @@ lightBlue =
 
 midnightBlue =
     Color.rgb255 0x00 0x00 0x80
+
+
+elementColorToColor : Element.Color -> Color
+elementColorToColor elColor =
+    elColor
+        |> Element.toRgb
+        |> (\{ red, blue, green } -> Color.rgb red blue green)
+
+
+svgElement : Int -> List (Element.Attribute msg) -> Svg msg -> Element msg
+svgElement size attributes svg =
+    Element.el attributes <|
+        Element.html <|
+            Svg.svg
+                [ width <| String.fromInt size ++ "px"
+                , height <| String.fromInt size ++ "px"
+                ]
+                [ svg ]
+
+
+schedulerIcon =
+    svgElement 18 [] <|
+        Material.Icons.view_week 18 Inherit
+
+sensorsIcon =
+    svgElement 18 [] <|
+        Material.Icons.sensors 18 Inherit
+
+
+converterIcon =
+    svgElement 18 [] <|
+        Material.Icons.music_note 18 Inherit
+
+sequencerIcon =
+    svgElement 18 [] <|
+        Material.Icons.view_day 18 Inherit

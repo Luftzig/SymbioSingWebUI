@@ -684,12 +684,8 @@ buttons model =
     in
     El.row [ Font.color Dracula.white, El.centerX, El.spacingXY 8 20 ]
         [ Element.Input.button
-            (Styles.button
-            ++ Styles.colorsPrimary
-                ++ [ buttonPadding
-                   --, Background.color <| Dracula.green
-                    , mouseOver [ Border.innerGlow Styles.palette.onBackground 2 ]
-                   , attrIfElse (model.state /= Stopped) (El.alpha 0.4) (El.alpha 1.0)
+            (Styles.buttonPrimary
+                ++ [ attrIfElse (model.state /= Stopped) (El.alpha 0.4) (El.alpha 1.0)
                    ]
             )
             { label =

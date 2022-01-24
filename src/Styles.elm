@@ -106,6 +106,20 @@ button =
     ]
 
 
+buttonPrimary: List (Attribute msg)
+buttonPrimary =
+    [ buttonPadding
+    , Font.color Dracula.white
+    , Font.center
+    , Background.color palette.primary
+    , Border.color palette.onBackground
+    , elevatedShadow
+    , Border.rounded 4
+    , mouseOver [ Border.innerGlow Dracula.white 2 ]
+    ]
+
+
+
 textFieldStyle =
     [ Background.color Dracula.black
     , width <| shrink
@@ -346,7 +360,6 @@ colorsPrimary =
     , Border.color palette.onBackground
     , Font.color palette.onPrimary
     ]
-
 
 card : List (Attribute msg)
 card =

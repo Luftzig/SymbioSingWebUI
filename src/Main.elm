@@ -6,6 +6,7 @@ import Browser
 import Browser.Events
 import Color.Dracula as Dracula
 import Composer.Converter as Converter
+import Composer.Sequencer as Sequencer exposing (IncomingMsg(..), OutgoingMsg(..))
 import Element as El
 import Element.Background as UIBackground
 import Element.Border as UIBorder
@@ -44,6 +45,7 @@ type alias Model =
     , errorLogState : ErrorLogState
     , savedMenuState : PanelState
     , savedSchedules : Set String
+    , sequencerData : Sequencer.Model
     }
 
 
@@ -72,6 +74,7 @@ type MainTab
     = SchedulerTab
     | SensorReadingsTab
     | NotationConverterTab
+    | SequencerTab
 
 
 type Msg
@@ -109,6 +112,9 @@ type Msg
     | ReceivedSavedSchedules (List String)
     | ToggleSavedMenu
     | SavedScheduleRequested String
+    | SequencerMessage Sequencer.Msg
+    | SendInstructionsToSequencerRequestedFromScheduler
+    | SendInstructionsToSequencerRequestedFromConverter
 
 
 initModel : { width : Int, height : Int } -> Model
@@ -129,6 +135,7 @@ initModel { width, height } =
     , errorLogState = LogClosedAndRead
     , savedMenuState = PanelFolded
     , savedSchedules = Set.empty
+    , sequencerData = Sequencer.init
     }
 
 
@@ -208,8 +215,11 @@ update msg model =
 
                 newScheduler =
                     { scheduler | devices = newDevices }
+
+                ( sequencerModel, _ ) =
+                    handleSequencerMessage <| Sequencer.send (DevicesChanged newDevices)
             in
-            { model_ | devices = newDevices, scheduler = newScheduler }
+            { model_ | devices = newDevices, scheduler = newScheduler, sequencerData = sequencerModel.sequencerData }
 
         updateDevice : Int -> (FlowIODevice -> FlowIODevice) -> Array FlowIODevice
         updateDevice index updater =
@@ -270,6 +280,32 @@ update msg model =
             , Cmd.batch
                 [ Cmd.map SchedulerMessage cmd
                 , effectedCmd
+                ]
+            )
+
+        handleSequencerMessage sequencerMsg =
+            let
+                ( newModel, effect, cmd ) =
+                    Sequencer.update sequencerMsg model.sequencerData
+
+                ( effectedModel, effectCommand ) =
+                    case effect of
+                        NoMessage ->
+                            ( model, Cmd.none )
+
+                        GetInstructionFromScheduler ->
+                            ( model, sendMessage SendInstructionsToSequencerRequestedFromScheduler )
+
+                        GetInstructionFromConverter ->
+                            ( model, sendMessage SendInstructionsToSequencerRequestedFromConverter )
+
+                        LogError error ->
+                            ( logError error, Cmd.none )
+            in
+            ( { effectedModel | sequencerData = newModel }
+            , Cmd.batch
+                [ cmd |> Cmd.map SequencerMessage
+                , effectCommand
                 ]
             )
     in
@@ -633,6 +669,25 @@ update msg model =
         SavedScheduleRequested key ->
             ( model, LocalStorage.load key )
 
+        SequencerMessage sequencerMsg ->
+            handleSequencerMessage sequencerMsg
+
+        SendInstructionsToSequencerRequestedFromScheduler ->
+            handleSequencerMessage <|
+                Sequencer.send
+                    (ReceivedNewPart
+                        model.scheduler.scheduleName
+                        model.scheduler.instructions
+                    )
+
+        SendInstructionsToSequencerRequestedFromConverter ->
+            handleSequencerMessage <|
+                Sequencer.send
+                    (ReceivedNewPart
+                        model.scheduler.scheduleName
+                        model.scheduler.instructions
+                    )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -665,7 +720,7 @@ body model =
 
 
 tabs : Model -> El.Element Msg
-tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel } =
+tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel, sequencerData } =
     let
         tabSize =
             if servicesPanel.panelState == PanelFolded then
@@ -695,21 +750,27 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel }
         [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
             [ UIInput.button (tabStyle (openTab == SchedulerTab))
                 { label =
-                    El.text
-                        "Scheduler"
+                    El.row [El.spacing 4]
+                        [ Images.schedulerIcon
+                        , El.text "Scheduler"
+                        ]
                 , onPress = Just <| ChangeTabTo SchedulerTab
                 }
             , UIInput.button (tabStyle (openTab == SensorReadingsTab))
                 { label =
-                    El.text
-                        "Sensors"
+                    El.row [El.spacing 4]
+                        [ Images.sensorsIcon, El.text "Sensors" ]
                 , onPress = Just <| ChangeTabTo SensorReadingsTab
                 }
             , UIInput.button (tabStyle (openTab == NotationConverterTab))
                 { label =
-                    El.text
-                        "Convert Score"
+                    El.row [El.spacing 4] [ Images.converterIcon, El.text "Convert Score" ]
                 , onPress = Just <| ChangeTabTo NotationConverterTab
+                }
+            , UIInput.button (tabStyle (openTab == SequencerTab))
+                { label =
+                    El.row [El.spacing 4] [ Images.sequencerIcon, El.text "Sequencer" ]
+                , onPress = Just <| ChangeTabTo SequencerTab
                 }
             ]
         , case openTab of
@@ -722,6 +783,9 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel }
 
             NotationConverterTab ->
                 El.map ComposerMessage <| Converter.view composerData
+
+            SequencerTab ->
+                El.map SequencerMessage <| Sequencer.view sequencerData
         ]
 
 
