@@ -3,7 +3,8 @@ module Composer.Sequencer exposing (IncomingMsg(..), Model, Msg, OutgoingMsg(..)
 import Array exposing (Array)
 import Dict as Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, column, el, fill, fillPortion, height, htmlAttribute, none, padding, paragraph, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
+import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, column, el, fill, fillPortion, height, htmlAttribute, none, padding, paddingXY, paragraph, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
+import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
 import Element.Input exposing (button)
@@ -86,6 +87,18 @@ type Msg
     | AddPartToSequence String
     | TogglePartDetails String
     | RemoveFromSequence Int
+    | MovePart Int MoveDirection
+
+
+type MoveDirection
+    = MoveUp
+    | MoveDown
+
+
+
+-- | MoveToBeginning
+-- | MoveToEnd
+-- | MoveToPosition Int
 
 
 type IncomingMsg
@@ -185,6 +198,7 @@ update msg model =
                         |> Maybe.map .instructions
                         |> Maybe.map Dict.keys
                         |> Maybe.withDefault []
+                        |> List.filterNot (String.isEmpty)
 
                 newRoles =
                     Dict.addKeys [] partRoles model.roleAssignments
@@ -217,7 +231,7 @@ update msg model =
                     List.removeAt index model.sequence
 
                 newRoles =
-                    model.sequence
+                    newSequence
                         |> List.concatMap (Tuple.second >> .instructions >> Dict.keys)
                         |> Set.fromList
 
@@ -225,6 +239,18 @@ update msg model =
                     Dict.keepOnly newRoles model.roleAssignments
             in
             ( { model | sequence = newSequence, roleAssignments = newAssignments }, NoMessage, Cmd.none )
+
+        MovePart partIndex moveDirection ->
+            let
+                newSequence =
+                    case moveDirection of
+                        MoveUp ->
+                            List.swapAt partIndex (partIndex - 1) model.sequence
+
+                        MoveDown ->
+                            List.swapAt partIndex (partIndex + 1) model.sequence
+            in
+            ( { model | sequence = newSequence }, NoMessage, Cmd.none )
 
 
 view : Model -> Element Msg
@@ -248,12 +274,12 @@ viewRoleAssignments model =
     in
     row [ fullWidth, Styles.bottomBorder, padding 5 ]
         [ text "Roles Assignment:"
-        , row [spacing 10] roles
+        , row [ spacing 10 ] roles
         ]
 
 
 viewSequence : Model -> Element Msg
-viewSequence { sequence } =
+viewSequence { sequence, roleAssignments } =
     let
         numParts =
             List.length sequence
@@ -279,22 +305,75 @@ viewSequence { sequence } =
                         |> TypedTime.toMilliseconds
                         |> (*) (toFloat numParts)
                         |> round
+
+                partRoles =
+                    instructions.instructions
+                        |> Dict.keys
+                        |> List.filterNot String.isEmpty
+                        |> List.map
+                            (\role ->
+                                case Dict.get role roleAssignments of
+                                    -- Non-empty list
+                                    Just (_ :: _) ->
+                                        el
+                                            (Styles.card
+                                                ++ [ Background.color Styles.palette.background
+                                                   , Font.color Styles.palette.onBackground
+                                                   ]
+                                            )
+                                        <|
+                                            text role
+
+                                    _ ->
+                                        el
+                                            (Styles.card
+                                                ++ [ Background.color Styles.palette.background
+                                                   , Font.color Styles.palette.error
+                                                   ]
+                                            )
+                                        <|
+                                            text role
+                            )
             in
             row
                 (Styles.card
                     ++ Styles.colorsPrimary
                     ++ [ height <|
-                                fillPortion size
+                            fillPortion size
+                       , fullWidth
                        , spacing 10
                        ]
                 )
-                [ column [ height <| fill, width <| fillPortion 1, Styles.fontSize.tiny ]
-                    [ el [ alignTop ] <| text "startTime"
-                    , el [ height <| Element.minimum 10 fill ] <| none
-                    , el [ alignBottom ] <| text "endTime"
+                [ column [ height <| fill, width <| fillPortion 1, Styles.fontSize.smaller, alignLeft, spacing 5 ]
+                    [ row [ alignTop, spacing 5 ]
+                        [ text "startTime"
+                        , if index /= 0 then
+                            button (Styles.button ++ [ paddingXY 6 2 ])
+                                { label = el [ Region.description "move up" ] <| text "⇧"
+                                , onPress = Just <| MovePart index MoveUp
+                                }
+
+                          else
+                            none
+                        ]
+                    , el [ height <| Element.minimum 1 fill ] <| none
+                    , row [ alignBottom, spacing 5 ]
+                        [ text "endTime"
+                        , if index /= numParts - 1 then
+                            button (Styles.button ++ [ paddingXY 6 2 ])
+                                { label = el [ Region.description "move down" ] <| text "⇩"
+                                , onPress = Just <| MovePart index MoveDown
+                                }
+
+                          else
+                            none
+                        ]
                     ]
-                , text partName
-                , button Styles.button
+                , column [ width <| fillPortion 4, centerX, Font.semiBold ]
+                    [ text partName
+                    , row [ Styles.fontSize.small, spacing 10 ] partRoles
+                    ]
+                , button (Styles.button ++ [ alignRight ])
                     { label = el [ Region.description "remove" ] <| Images.removeCircleIcon
                     , onPress = Just <| RemoveFromSequence index
                     }
@@ -309,10 +388,9 @@ viewSequence { sequence } =
         |> (::) partSpacer
         |> column
             [ width <| fillPortion 3
-
             , height fill
             , alignTop
-            , padding 5
+            , padding 10
             , Styles.rightBorder
             , spacing 5
             , scrollbarY
