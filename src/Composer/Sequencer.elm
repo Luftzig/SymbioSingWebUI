@@ -298,7 +298,12 @@ viewSequence { sequence, roleAssignments } =
         relativeLength instructions =
             length instructions |> TypedTime.divide (TypedTime.toMilliseconds totalLength)
 
-        viewPart index ( partName, instructions ) =
+        startTimes =
+            sequence
+            |> List.map (Tuple.second >> length)
+            |> List.scanl (TypedTime.add) TypedTime.zero
+
+        viewPart index (startTime, ( partName, instructions )) =
             let
                 size =
                     relativeLength instructions
@@ -346,7 +351,7 @@ viewSequence { sequence, roleAssignments } =
                 )
                 [ column [ height <| fill, width <| fillPortion 1, Styles.fontSize.smaller, alignLeft, spacing 5 ]
                     [ row [ alignTop, spacing 5 ]
-                        [ text "startTime"
+                        [ text <| TypedTime.toFormattedString TypedTime.HoursMinutesSecondsHundredths startTime
                         , if index /= 0 then
                             button (Styles.button ++ [ paddingXY 6 2 ])
                                 { label = el [ Region.description "move up" ] <| text "⇧"
@@ -358,7 +363,10 @@ viewSequence { sequence, roleAssignments } =
                         ]
                     , el [ height <| Element.minimum 1 fill ] <| none
                     , row [ alignBottom, spacing 5 ]
-                        [ text "endTime"
+                        [ startTime
+                            |> TypedTime.add (length instructions)
+                            |> TypedTime.toFormattedString TypedTime.HoursMinutesSecondsHundredths
+                            |> text
                         , if index /= numParts - 1 then
                             button (Styles.button ++ [ paddingXY 6 2 ])
                                 { label = el [ Region.description "move down" ] <| text "⇩"
@@ -383,6 +391,7 @@ viewSequence { sequence, roleAssignments } =
             el [] none
     in
     sequence
+        |> List.zip startTimes
         |> List.indexedMap viewPart
         |> List.intersperse partSpacer
         |> (::) partSpacer
