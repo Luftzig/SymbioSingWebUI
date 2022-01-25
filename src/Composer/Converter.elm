@@ -233,7 +233,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
             below <|
                 el
                     [ Styles.fullWidth
-                    , Font.size 10
+                    , Styles.fontSize.smaller
                     , Background.color Dracula.red
                     , Font.color Styles.palette.onBackground
                     ]
@@ -246,7 +246,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
                 \{ partName, partId } ->
                     row [ paddingXY 1 4, spacing 5 ]
                         [ el [] <| text partName
-                        , el [ Font.size 10, alignRight, paddingXY 4 0 ] <| text ("(" ++ partId ++ ")")
+                        , el [ Styles.fontSize.smaller, alignRight, paddingXY 4 0 ] <| text ("(" ++ partId ++ ")")
                         ]
             , width = fillPortion 1
             }
@@ -287,7 +287,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
                         suggestionsList =
                             column
                                 [ spacing 5
-                                , Font.size 10
+                                , Styles.fontSize.smaller
                                 , Styles.elevatedShadow
                                 , Background.color Styles.palette.background
                                 ]

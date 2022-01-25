@@ -380,3 +380,11 @@ clickOutside onClickOutside attrs content =
         Html.node "click-outside"
             (attrs ++ [ Html.Events.on "click-outside" (Json.Decode.succeed onClickOutside) ])
             [ Element.layout [] content ]
+
+fontSize =
+    { tiny = Font.size 8
+    , smaller = Font.size 10
+    , small = Font.size 12
+    , standard = Font.size 14
+    , large = Font.size 18
+    , huge = Font.size 24}

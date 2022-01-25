@@ -704,7 +704,7 @@ body model =
         , El.padding 20
         , UIFont.color Dracula.white
         , UIFont.family [ UIFont.typeface "Overpass", UIFont.typeface "Open Sans", UIFont.typeface "Helvetica", UIFont.sansSerif ]
-        , UIFont.size 15
+        , Styles.fontSize.standard
         , UIBackground.color Dracula.black
         ]
     <|
@@ -750,7 +750,7 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel, 
         [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
             [ UIInput.button (tabStyle (openTab == SchedulerTab))
                 { label =
-                    El.row [El.spacing 4]
+                    El.row [ El.spacing 4 ]
                         [ Images.schedulerIcon
                         , El.text "Scheduler"
                         ]
@@ -758,18 +758,18 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel, 
                 }
             , UIInput.button (tabStyle (openTab == SensorReadingsTab))
                 { label =
-                    El.row [El.spacing 4]
+                    El.row [ El.spacing 4 ]
                         [ Images.sensorsIcon, El.text "Sensors" ]
                 , onPress = Just <| ChangeTabTo SensorReadingsTab
                 }
             , UIInput.button (tabStyle (openTab == NotationConverterTab))
                 { label =
-                    El.row [El.spacing 4] [ Images.converterIcon, El.text "Convert Score" ]
+                    El.row [ El.spacing 4 ] [ Images.converterIcon, El.text "Convert Score" ]
                 , onPress = Just <| ChangeTabTo NotationConverterTab
                 }
             , UIInput.button (tabStyle (openTab == SequencerTab))
                 { label =
-                    El.row [El.spacing 4] [ Images.sequencerIcon, El.text "Sequencer" ]
+                    El.row [ El.spacing 4 ] [ Images.sequencerIcon, El.text "Sequencer" ]
                 , onPress = Just <| ChangeTabTo SequencerTab
                 }
             ]
@@ -837,7 +837,7 @@ displayDeviceList model =
                                             Dracula.gray
                                 in
                                 UIInput.button
-                                    [ UIFont.size 11
+                                    [ Styles.fontSize.small
                                     , UIFont.color color
                                     , UIBackground.color backgroundColor
                                     , UIBorder.rounded 4
@@ -859,7 +859,7 @@ displayDeviceList model =
                                 , UIInput.button [ UIRegion.description "Disconnect", El.alignLeft ]
                                     { label = buttonCssIcon "icon-connected" "Connected", onPress = Just <| DisconnectDevice index }
                                 ]
-                            , El.paragraph [ UIFont.size 10, El.width El.fill ]
+                            , El.paragraph [ Styles.fontSize.smaller, El.width El.fill ]
                                 [ El.text "id: "
                                 , El.text <| Maybe.withDefault "Unknown" <| Maybe.map .id device.details
                                 ]
@@ -955,7 +955,7 @@ displayServices { devices, servicesPanel } =
         displayControlService index device =
             case ( device.status, device.controlServiceStatus ) of
                 ( Connected, Just hardwareStatus ) ->
-                    El.column [ El.width El.fill, UIFont.size 16 ]
+                    El.column [ El.width El.fill, Styles.fontSize.large ]
                         [ El.text
                             ("Status for "
                                 ++ String.fromInt (index + 1)
@@ -1012,7 +1012,7 @@ displayServices { devices, servicesPanel } =
                         ]
                         El.none
                 ]
-                { label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| El.text "PWM"
+                { label = UIInput.labelAbove [ Styles.fontSize.small, UIFont.center ] <| El.text "PWM"
                 , onChange = round >> onUpdate
                 , max = 255
                 , min = 0
@@ -1036,7 +1036,7 @@ displayServices { devices, servicesPanel } =
                 checkbox label port_ currentValue =
                     UIInput.checkbox []
                         { onChange = portFromBool >> onUpdate port_
-                        , label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| El.text label
+                        , label = UIInput.labelAbove [ Styles.fontSize.small, UIFont.center ] <| El.text label
                         , icon = UIInput.defaultCheckbox
                         , checked = isPortOpen currentValue
                         }
@@ -1066,7 +1066,7 @@ displayServices { devices, servicesPanel } =
                              else
                                 Dracula.white
                             )
-                        , UIFont.size 10
+                        , Styles.fontSize.smaller
                         , UIFont.color
                             (if status then
                                 Dracula.white
@@ -1460,7 +1460,7 @@ header { savedMenuState, savedSchedules } =
                 }
     in
     El.row [ fullWidth, El.centerX, El.alignTop ]
-        [ El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <|
+        [ El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, Styles.fontSize.huge ] <|
             El.text "SymbioSing Control Panel"
         , El.el [ El.alignRight, El.below savedMenu ] <|
             UIInput.button (Styles.button ++ [ El.alignRight ])

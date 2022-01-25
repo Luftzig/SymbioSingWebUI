@@ -77,7 +77,7 @@ view model =
                                     barChart { width = 200, height = 60 } posix readings
 
                             Nothing ->
-                                El.el [ Element.Font.size 11 ] <| El.text "no data"
+                                El.el [ Styles.fontSize.small ] <| El.text "no data"
                         ]
                 }
 

@@ -97,7 +97,7 @@ view : Model -> El.Element Msg
 view model =
     El.el
         [ Font.family [ Font.typeface "Overpass", Font.typeface "Open Sans", Font.typeface "Helvetica", Font.sansSerif ]
-        , Font.size 15
+        , Styles.fontSize.standard
         , Font.color Dracula.white
         , El.height El.fill
         , fullWidth
@@ -126,7 +126,7 @@ header { roles, scheduleName } =
                 >> (++) "Role "
     in
     El.row [ fullWidth, El.spacingXY 20 8 ]
-        [ El.el [ El.width <| El.fillPortion 3, El.spaceEvenly, Font.bold, Font.size 18 ] <| El.text "Schedule"
+        [ El.el [ El.width <| El.fillPortion 3, El.spaceEvenly, Font.bold, Styles.fontSize.large ] <| El.text "Schedule"
         , Element.Input.text (Styles.textFieldStyle ++ [ El.width <| fillPortion 2 ])
             { text = scheduleName
             , placeholder = Just <| Element.Input.placeholder [] <| El.text "flow-schedule"
@@ -193,7 +193,7 @@ actionSelection command onChange =
                         icon
     in
     Element.Input.radioRow
-        [ Font.size 11
+        [ Styles.fontSize.small
         , El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap"
         , cellHeight
         , El.width <| El.minimum (34 * 4) <| El.fillPortion 3
@@ -269,31 +269,31 @@ portsSelection inst onPortChange =
     in
     El.row [ El.padding 2, El.spacing 2 ]
         [ Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 1"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 1"
             , checked = inst.ports.port1 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port1
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 2"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 2"
             , checked = inst.ports.port2 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port2
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 3"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 3"
             , checked = inst.ports.port3 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port3
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 4"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 4"
             , checked = inst.ports.port4 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port4
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 5"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 5"
             , checked = inst.ports.port5 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port5
@@ -618,7 +618,7 @@ devicesTable model =
                                     )
                                     deviceIds
                     in
-                    El.row [ fullWidth, Font.size 12 ] <|
+                    El.row [ fullWidth, Styles.fontSize.small ] <|
                         if model.display.roleDeviceSelection == SelectionOpen roleIndex then
                             [ El.el
                                 [ El.below <| devicesList
@@ -657,7 +657,7 @@ devicesTable model =
         , El.height <| El.fill
         , El.scrollbarY
         , El.scrollbarX
-        , Font.size 11
+        , Styles.fontSize.small
         , El.padding 2
         ]
         { data = rows

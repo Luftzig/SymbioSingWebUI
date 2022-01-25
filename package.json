@@ -18,7 +18,7 @@
     "build": "vite build",
     "serve": "vite preview",
     "test": "elm-test-rs",
-    "test-watch": "elm-test-rs --watch"
+    "test-watch": "elm-test-rs --watch tests/*.elm"
   },
   "dependencies": {
     "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#19f251ebda03ce2aefe232b6fe989c9d0637fcb3",
