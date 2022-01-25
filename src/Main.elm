@@ -10,6 +10,7 @@ import Composer.Sequencer as Sequencer exposing (IncomingMsg(..), OutgoingMsg(..
 import Element as El
 import Element.Background as UIBackground
 import Element.Border as UIBorder
+import Element.Events
 import Element.Font as UIFont
 import Element.Input as UIInput
 import Element.Region as UIRegion
@@ -46,7 +47,13 @@ type alias Model =
     , savedMenuState : PanelState
     , savedSchedules : Set String
     , sequencerData : Sequencer.Model
+    , dialog : DialogState
     }
+
+
+type DialogState
+    = DialogHidden
+    | SequencerDialogShown
 
 
 type ErrorLogState
@@ -115,6 +122,7 @@ type Msg
     | SequencerMessage Sequencer.Msg
     | SendInstructionsToSequencerRequestedFromScheduler
     | SendInstructionsToSequencerRequestedFromConverter
+    | DialogBackDropClicked
 
 
 initModel : { width : Int, height : Int } -> Model
@@ -136,6 +144,7 @@ initModel { width, height } =
     , savedMenuState = PanelFolded
     , savedSchedules = Set.empty
     , sequencerData = Sequencer.init
+    , dialog = DialogHidden
     }
 
 
@@ -301,6 +310,12 @@ update msg model =
 
                         LogError error ->
                             ( logError error, Cmd.none )
+
+                        ShowDialog ->
+                            ( { model | dialog = SequencerDialogShown }, Cmd.none )
+
+                        HideDialog ->
+                            ( { model | dialog = DialogHidden }, Cmd.none )
             in
             ( { effectedModel | sequencerData = newModel }
             , Cmd.batch
@@ -688,6 +703,9 @@ update msg model =
                         model.scheduler.instructions
                     )
 
+        DialogBackDropClicked ->
+            ( { model | dialog = DialogHidden }, Cmd.none )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -706,6 +724,7 @@ body model =
         , UIFont.family [ UIFont.typeface "Overpass", UIFont.typeface "Open Sans", UIFont.typeface "Helvetica", UIFont.sansSerif ]
         , Styles.fontSize.standard
         , UIBackground.color Dracula.black
+        , El.inFront <| displayDialog model
         ]
     <|
         El.column [ El.width <| El.fill, El.height <| El.fill, El.spacing 10 ]
@@ -1528,3 +1547,30 @@ footer { errorLog, errorLogState } =
         [ El.el [ El.alignLeft, El.above errors ] <|
             UIInput.button [] { onPress = Just ToggleErrorLog, label = El.row [] errorCount }
         ]
+
+
+displayDialog : Model -> El.Element Msg
+displayDialog { dialog, sequencerData } =
+    case dialog of
+        DialogHidden ->
+            El.none
+
+        SequencerDialogShown ->
+            El.el
+                [ fullWidth
+                , El.height El.fill
+                , El.centerX
+                , El.centerY
+                , El.behindContent <|
+                    El.el
+                        [ fullWidth
+                        , El.height El.fill
+                        , Element.Events.onClick DialogBackDropClicked
+                        ]
+                        El.none
+                , UIBackground.color <| El.rgba255 200 200 200 0.2
+                ]
+            <|
+                (Sequencer.viewDialog sequencerData
+                    |> El.map SequencerMessage
+                )

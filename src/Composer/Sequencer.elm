@@ -1,13 +1,14 @@
-module Composer.Sequencer exposing (IncomingMsg(..), Model, Msg, OutgoingMsg(..), init, send, update, view)
+module Composer.Sequencer exposing (IncomingMsg(..), Model, Msg, OutgoingMsg(..), init, send, update, view, viewDialog)
 
 import Array exposing (Array)
+import Color.Dracula as Dracula
 import Dict as Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, column, el, fill, fillPortion, height, htmlAttribute, none, padding, paddingXY, paragraph, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
+import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, htmlAttribute, mouseOver, none, padding, paddingXY, paragraph, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
-import Element.Input exposing (button)
+import Element.Input exposing (button, checkbox, labelHidden)
 import Element.Region as Region
 import Extra.Array as Array
 import Extra.Dict as Dict
@@ -29,7 +30,7 @@ import Task
 type alias Model =
     { availableParts : Dict String Instructions
     , sequence : List ( String, Instructions )
-    , roleAssignments : Dict RoleName (List DeviceId)
+    , roleAssignments : Dict RoleName (Set DeviceId)
     , availableDevices : Array FlowIODevice
     , instructionsStorage : Set String
     , dialog : DialogStatus
@@ -56,6 +57,7 @@ type DialogStatus
     = NoDialog
     | LoadFromStorageDialog
     | SaveSequenceDialog String
+    | AssignRoleDialog String
 
 
 init : Model
@@ -88,6 +90,8 @@ type Msg
     | TogglePartDetails String
     | RemoveFromSequence Int
     | MovePart Int MoveDirection
+    | RoleClicked String
+    | DeviceAssignmentChanged String FlowIODevice Bool
 
 
 type MoveDirection
@@ -104,6 +108,7 @@ type MoveDirection
 type IncomingMsg
     = DevicesChanged (Array FlowIODevice)
     | ReceivedNewPart String Instructions
+    | BackdropClicked
 
 
 send : IncomingMsg -> Msg
@@ -116,6 +121,8 @@ type OutgoingMsg
     | GetInstructionFromScheduler
     | GetInstructionFromConverter
     | LogError String
+    | ShowDialog
+    | HideDialog
 
 
 update : Msg -> Model -> ( Model, OutgoingMsg, Cmd Msg )
@@ -132,6 +139,9 @@ update msg model =
                     , Cmd.none
                     )
 
+                BackdropClicked ->
+                    ( { model | dialog = NoDialog }, NoMessage, Cmd.none )
+
         RequestLoadFromScheduler ->
             ( model, GetInstructionFromScheduler, Cmd.none )
 
@@ -139,7 +149,7 @@ update msg model =
             ( model, GetInstructionFromConverter, Cmd.none )
 
         LoadFromStorageRequested ->
-            ( { model | dialog = LoadFromStorageDialog }, NoMessage, Cmd.none )
+            ( { model | dialog = LoadFromStorageDialog }, ShowDialog, Cmd.none )
 
         LoadFromStorage key ->
             ( model, NoMessage, LocalStorage.load key )
@@ -169,7 +179,7 @@ update msg model =
             Debug.todo "Play Sequence"
 
         OpenSaveSequenceDialog ->
-            ( { model | dialog = SaveSequenceDialog "" }, NoMessage, Cmd.none )
+            ( { model | dialog = SaveSequenceDialog "" }, ShowDialog, Cmd.none )
 
         DownloadSequence ->
             Debug.todo "Download sequence"
@@ -178,7 +188,7 @@ update msg model =
             Debug.todo "Request sequence upload"
 
         CloseDialog ->
-            ( { model | dialog = NoDialog }, NoMessage, Cmd.none )
+            ( { model | dialog = NoDialog }, HideDialog, Cmd.none )
 
         AddPartToSequence partName ->
             let
@@ -198,10 +208,10 @@ update msg model =
                         |> Maybe.map .instructions
                         |> Maybe.map Dict.keys
                         |> Maybe.withDefault []
-                        |> List.filterNot (String.isEmpty)
+                        |> List.filterNot String.isEmpty
 
                 newRoles =
-                    Dict.addKeys [] partRoles model.roleAssignments
+                    Dict.addKeys Set.empty partRoles model.roleAssignments
             in
             ( { model
                 | sequence = newSequence
@@ -252,6 +262,36 @@ update msg model =
             in
             ( { model | sequence = newSequence }, NoMessage, Cmd.none )
 
+        RoleClicked roleName ->
+            ( { model | dialog = AssignRoleDialog roleName }, ShowDialog, Cmd.none )
+
+        DeviceAssignmentChanged role device isSelected ->
+            let
+                assignments =
+                    model.roleAssignments
+                        |> Dict.get role
+                        |> Maybe.withDefault Set.empty
+
+                deviceId =
+                    device.details |> Maybe.map .id
+
+                newAssignments =
+                    case deviceId of
+                        Nothing ->
+                            assignments
+
+                        Just id ->
+                            if isSelected then
+                                assignments |> Set.insert id
+
+                            else
+                                assignments |> Set.remove id
+
+                newRoles =
+                    model.roleAssignments |> Dict.insert role newAssignments
+            in
+            ( { model | roleAssignments = newRoles }, NoMessage, Cmd.none )
+
 
 view : Model -> Element Msg
 view model =
@@ -265,14 +305,41 @@ view model =
         ]
 
 
+viewRoleAssignments : Model -> Element Msg
 viewRoleAssignments model =
     let
         roles =
             model.roleAssignments
                 |> Dict.keys
-                |> List.map text
+                |> List.map viewRole
+
+        viewRole name =
+            let
+                assignments =
+                    model.roleAssignments
+                        |> Dict.get name
+                        |> Maybe.withDefault Set.empty
+
+                content =
+                    row [ spacing 5 ]
+                        [ el [ Font.semiBold ] <| text name
+                        , text ":"
+                        , if Set.isEmpty assignments then
+                            el [ Font.color Styles.palette.error ] <| text "not assigned"
+
+                          else
+                            text
+                                ((String.fromInt <| Set.size assignments)
+                                    ++ " assigned"
+                                )
+                        ]
+            in
+            button (Styles.buttonPrimary ++ [])
+                { label = content
+                , onPress = Just <| RoleClicked name
+                }
     in
-    row [ fullWidth, Styles.bottomBorder, padding 5 ]
+    wrappedRow [ fullWidth, Styles.bottomBorder, padding 5, spacing 10 ]
         [ text "Roles Assignment:"
         , row [ spacing 10 ] roles
         ]
@@ -300,10 +367,10 @@ viewSequence { sequence, roleAssignments } =
 
         startTimes =
             sequence
-            |> List.map (Tuple.second >> length)
-            |> List.scanl (TypedTime.add) TypedTime.zero
+                |> List.map (Tuple.second >> length)
+                |> List.scanl TypedTime.add TypedTime.zero
 
-        viewPart index (startTime, ( partName, instructions )) =
+        viewPart index ( startTime, ( partName, instructions ) ) =
             let
                 size =
                     relativeLength instructions
@@ -311,33 +378,32 @@ viewSequence { sequence, roleAssignments } =
                         |> (*) (toFloat numParts)
                         |> round
 
+                displayRole role isNotAssigned =
+                    button
+                        (Styles.card
+                            ++ [ Background.color Styles.palette.background
+                               , Font.color <|
+                                    if isNotAssigned then
+                                        Styles.palette.error
+
+                                    else
+                                        Styles.palette.onBackground
+                               , mouseOver [ Border.innerGlow Dracula.purple 2 ]
+                               ]
+                        )
+                        { label = text role, onPress = Just <| RoleClicked role }
+
                 partRoles =
                     instructions.instructions
                         |> Dict.keys
                         |> List.filterNot String.isEmpty
                         |> List.map
                             (\role ->
-                                case Dict.get role roleAssignments of
-                                    -- Non-empty list
-                                    Just (_ :: _) ->
-                                        el
-                                            (Styles.card
-                                                ++ [ Background.color Styles.palette.background
-                                                   , Font.color Styles.palette.onBackground
-                                                   ]
-                                            )
-                                        <|
-                                            text role
-
-                                    _ ->
-                                        el
-                                            (Styles.card
-                                                ++ [ Background.color Styles.palette.background
-                                                   , Font.color Styles.palette.error
-                                                   ]
-                                            )
-                                        <|
-                                            text role
+                                displayRole role
+                                    (Dict.get role roleAssignments
+                                        |> Maybe.withDefault Set.empty
+                                        |> Set.isEmpty
+                                    )
                             )
             in
             row
@@ -502,35 +568,79 @@ viewControls model =
 
 
 viewDialog : Model -> Element Msg
-viewDialog { dialog } =
-    case dialog of
+viewDialog model =
+    let
+        dialogBase title content =
+            column
+                (Styles.card
+                    ++ [ Border.width 1
+                       , Border.color Styles.palette.onBackground
+                       , Styles.elevatedShadow
+                       , Background.color Styles.palette.background
+                       , width <| Element.minimum 120 <| Element.maximum 800 <| Element.shrink
+                       , centerX
+                       , centerY
+                       , padding 20
+                       , spacing 10
+                       ]
+                )
+                [ row [ fullWidth, spacing 10, Styles.bottomBorder ]
+                    [ el [ Styles.fontSize.large, centerX ] <| text title
+                    , button [ alignRight ] { label = text "✕", onPress = Just CloseDialog }
+                    ]
+                , content
+                ]
+    in
+    case model.dialog of
         NoDialog ->
             none
 
         LoadFromStorageDialog ->
-            column
-                (Styles.card
-                    ++ [ Border.width 1
-                       , Border.color Styles.palette.onBackground
-                       , Styles.elevatedShadow
-                       ]
-                )
-                [ row [ fullWidth ]
-                    [ el [ centerX ] <| text "Load"
-                    , button [ alignRight ] { label = text "✕", onPress = Just CloseDialog }
-                    ]
-                ]
+            dialogBase "Load" none
 
         SaveSequenceDialog string ->
-            column
-                (Styles.card
-                    ++ [ Border.width 1
-                       , Border.color Styles.palette.onBackground
-                       , Styles.elevatedShadow
-                       ]
-                )
-                [ row [ fullWidth ]
-                    [ el [ centerX ] <| text "Load"
-                    , button [ alignRight ] { label = text "✕", onPress = Just CloseDialog }
-                    ]
-                ]
+            dialogBase "Save" none
+
+        AssignRoleDialog roleName ->
+            let
+                assignments =
+                    model.roleAssignments
+                        |> Dict.get roleName
+                        |> Maybe.withDefault Set.empty
+
+                getId device =
+                    device.details
+                        |> Maybe.map .id
+                        |> Maybe.withDefault "unknown ID"
+
+                isAssigned device =
+                    Set.member (getId device) assignments
+
+                displayDeviceCheckbox : FlowIODevice -> Element Msg
+                displayDeviceCheckbox device =
+                    row [ fullWidth, spacing 10 ]
+                        [ checkbox []
+                            { onChange = DeviceAssignmentChanged roleName device
+                            , label = labelHidden "select device"
+                            , checked = isAssigned device
+                            , icon = Element.Input.defaultCheckbox
+                            }
+                        , device.details
+                            |> Maybe.map .name
+                            |> Maybe.withDefault "unknown device"
+                            |> text
+                        ]
+            in
+            model.availableDevices
+                |> Array.filter (\d -> d.status == FlowIO.Connected || isAssigned d)
+                |> Array.map displayDeviceCheckbox
+                |> Array.toList
+                |> (\devices ->
+                        if List.isEmpty devices then
+                            [ el [ centerX ] <| text "No connected devices" ]
+
+                        else
+                            devices
+                   )
+                |> column []
+                |> dialogBase (roleName ++ " Assignments")
