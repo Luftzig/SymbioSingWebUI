@@ -9,7 +9,10 @@ import Element.Events
 import Element.Font as Font
 import Element.Input as Input exposing (OptionState(..))
 import Element.Region as Region
+import Html
 import Html.Attributes
+import Html.Events
+import Json.Decode
 import Maybe.Extra
 
 
@@ -94,12 +97,27 @@ button : List (Attribute msg)
 button =
     [ buttonPadding
     , Font.color Dracula.white
+    , Font.center
     , Background.color Dracula.blue
     , Border.color Dracula.white
     , elevatedShadow
     , Border.rounded 4
     , mouseOver [ Border.innerGlow Dracula.purple 2 ]
     ]
+
+
+buttonPrimary: List (Attribute msg)
+buttonPrimary =
+    [ buttonPadding
+    , Font.color Dracula.white
+    , Font.center
+    , Background.color palette.primary
+    , Border.color palette.onBackground
+    , elevatedShadow
+    , Border.rounded 4
+    , mouseOver [ Border.innerGlow Dracula.white 2 ]
+    ]
+
 
 
 textFieldStyle =
@@ -216,6 +234,8 @@ palette =
     , onBackground = Dracula.white
     , onPrimary = Dracula.black
     , secondary = Dracula.green
+    , error = Dracula.red
+    , onError = Dracula.white
     }
 
 
@@ -341,10 +361,30 @@ colorsPrimary =
     , Font.color palette.onPrimary
     ]
 
-
 card : List (Attribute msg)
 card =
     [ Border.rounded 4
     , Border.width 1
     , paddingXY 4 3
     ]
+
+
+onFocusOut : msg -> Attribute msg
+onFocusOut msg =
+    Element.htmlAttribute <| Html.Events.on "focusout" (Json.Decode.succeed msg)
+
+
+clickOutside : msg -> List (Html.Attribute msg) -> Element msg -> Element msg
+clickOutside onClickOutside attrs content =
+    Element.html <|
+        Html.node "click-outside"
+            (attrs ++ [ Html.Events.on "click-outside" (Json.Decode.succeed onClickOutside) ])
+            [ Element.layout [] content ]
+
+fontSize =
+    { tiny = Font.size 8
+    , smaller = Font.size 10
+    , small = Font.size 12
+    , standard = Font.size 14
+    , large = Font.size 18
+    , huge = Font.size 24}

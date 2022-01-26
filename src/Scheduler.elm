@@ -1,11 +1,11 @@
-module Scheduler exposing (Effect(..), Instructions, Model, Msg(..), RoleName, RolesInstructions, encodeInstructions, initModel, subscriptions, update, view)
+module Scheduler exposing (Effect(..), IncomingMsg(..), Instructions, Model, Msg(..), RoleName, RolesInstructions, encodeInstructions, initModel, instructionsDecoder, send, subscriptions, update, view)
 
 import Array exposing (Array)
 import Array.Extra as AE
 import Color.Dracula as Dracula
 import Dict exposing (Dict)
 import Dict.Extra
-import Element as El exposing (fillPortion, indexedTable)
+import Element as El exposing (fillPortion, indexedTable, mouseOver)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events
@@ -69,6 +69,7 @@ type alias Model =
         , roleDeviceSelection : RoleDeviceSelectState
         }
     , composerSchedule : Resource String Instructions
+    , scheduleName : String
     }
 
 
@@ -88,6 +89,7 @@ initModel =
         , roleDeviceSelection = SelectionClosed
         }
     , composerSchedule = NotLoaded
+    , scheduleName = ""
     }
 
 
@@ -95,7 +97,7 @@ view : Model -> El.Element Msg
 view model =
     El.el
         [ Font.family [ Font.typeface "Overpass", Font.typeface "Open Sans", Font.typeface "Helvetica", Font.sansSerif ]
-        , Font.size 15
+        , Styles.fontSize.standard
         , Font.color Dracula.white
         , El.height El.fill
         , fullWidth
@@ -109,7 +111,7 @@ view model =
 
 
 header : Model -> El.Element Msg
-header { roles } =
+header { roles, scheduleName } =
     let
         nextRoleName =
             roles
@@ -124,23 +126,22 @@ header { roles } =
                 >> (++) "Role "
     in
     El.row [ fullWidth, El.spacingXY 20 8 ]
-        [ El.el [ El.width <| El.fillPortion 3, El.spaceEvenly, Font.bold, Font.size 18 ] <| El.text "Schedule"
-        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
+        [ El.el [ El.width <| El.fillPortion 3, El.spaceEvenly, Font.bold, Styles.fontSize.large ] <| El.text "Schedule"
+        , Element.Input.text (Styles.textFieldStyle ++ [ El.width <| fillPortion 2 ])
+            { text = scheduleName
+            , placeholder = Just <| Element.Input.placeholder [] <| El.text "flow-schedule"
+            , onChange = ScheduleNameChanged
+            , label = Element.Input.labelLeft [] <| El.text "Name: "
+            }
+        , Element.Input.button ([ El.width <| fillPortion 1 ] ++ Styles.button)
             { onPress = Just (AddRole nextRoleName), label = El.text "+ Add Role" }
-        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
+        , Element.Input.button ([ El.width <| fillPortion 1 ] ++ Styles.button)
             { onPress = Just AddInstruction, label = El.text "+ Add Row" }
-        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
+        , Element.Input.button ([ El.width <| fillPortion 1 ] ++ Styles.button)
             { onPress = Just DeleteLastInstruction, label = El.text "Delete" }
-        , Element.Input.button [ El.width <| fillPortion 1, externalClass "btn-scheduler", Font.color Dracula.white, buttonPadding ]
+        , Element.Input.button ([ El.width <| fillPortion 1 ] ++ Styles.button)
             { onPress = Just ResetInstructions, label = El.text "Reset" }
         ]
-
-
-getCommandForRole : RoleName -> Int -> RolesInstructions -> Maybe FlowIOCommand
-getCommandForRole role index instructions =
-    instructions
-        |> Dict.get role
-        |> Maybe.andThen (Array.get index)
 
 
 cellHeight =
@@ -192,7 +193,7 @@ actionSelection command onChange =
                         icon
     in
     Element.Input.radioRow
-        [ Font.size 11
+        [ Styles.fontSize.small
         , El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap"
         , cellHeight
         , El.width <| El.minimum (34 * 4) <| El.fillPortion 3
@@ -268,31 +269,31 @@ portsSelection inst onPortChange =
     in
     El.row [ El.padding 2, El.spacing 2 ]
         [ Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 1"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 1"
             , checked = inst.ports.port1 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port1
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 2"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 2"
             , checked = inst.ports.port2 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port2
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 3"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 3"
             , checked = inst.ports.port3 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port3
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 4"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 4"
             , checked = inst.ports.port4 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port4
             }
         , Element.Input.checkbox []
-            { label = labelAbove [ Font.size 8 ] <| El.text "Port 5"
+            { label = labelAbove [ Styles.fontSize.tiny ] <| El.text "Port 5"
             , checked = inst.ports.port5 == PortOpen
             , icon = checkBox
             , onChange = onPortChange Port5
@@ -376,11 +377,6 @@ devicesTable model =
     let
         instructionsAt : Int -> RolesInstructions -> Dict RoleName FlowIOCommand
         instructionsAt index rolesInstructions =
-            let
-                last : Array a -> Maybe a
-                last array =
-                    Array.get (Array.length array - 1) array
-            in
             rolesInstructions
                 |> Dict.map
                     (\_ commands ->
@@ -465,13 +461,13 @@ devicesTable model =
                                     isCorrectlyOrdered =
                                         case ( maybePrevious, time, maybeNext ) of
                                             ( Just previous, current, Just next ) ->
-                                                (previous |> TypedTime.lt current) && (current |> TypedTime.lt next)
+                                                (previous |> TypedTime.lessThan current) && (current |> TypedTime.lessThan next)
 
                                             ( Nothing, current, Just next ) ->
-                                                current |> TypedTime.lt next
+                                                current |> TypedTime.lessThan next
 
                                             ( Just previous, current, Nothing ) ->
-                                                previous |> TypedTime.lt current
+                                                previous |> TypedTime.lessThan current
 
                                             ( Nothing, _, Nothing ) ->
                                                 True
@@ -622,7 +618,7 @@ devicesTable model =
                                     )
                                     deviceIds
                     in
-                    El.row [ fullWidth, Font.size 12 ] <|
+                    El.row [ fullWidth, Styles.fontSize.small ] <|
                         if model.display.roleDeviceSelection == SelectionOpen roleIndex then
                             [ El.el
                                 [ El.below <| devicesList
@@ -661,7 +657,7 @@ devicesTable model =
         , El.height <| El.fill
         , El.scrollbarY
         , El.scrollbarX
-        , Font.size 11
+        , Styles.fontSize.small
         , El.padding 2
         ]
         { data = rows
@@ -685,17 +681,13 @@ buttons model =
             model.roles
                 |> Array.map (\role -> model.roleDeviceMapping |> Dict.member role)
                 |> Array.length
-
-        allRolesAssociated =
-            numRolesAssociated == (model.roles |> Array.length)
     in
     El.row [ Font.color Dracula.white, El.centerX, El.spacingXY 8 20 ]
         [ Element.Input.button
-            [ externalClass "btn-scheduler"
-            , buttonPadding
-            , Background.color <| Dracula.green
-            , attrIfElse (model.state /= Stopped) (El.alpha 0.4) (El.alpha 1.0)
-            ]
+            (Styles.buttonPrimary
+                ++ [ attrIfElse (model.state /= Stopped) (El.alpha 0.4) (El.alpha 1.0)
+                   ]
+            )
             { label =
                 case model.state of
                     Stopped ->
@@ -713,18 +705,22 @@ buttons model =
                 else
                     Just StopInstructions
             }
-        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
-            { label = El.text "Save"
+        , Element.Input.button (Styles.button ++ [ El.paddingXY 12 4 ])
+            { label = El.text "Save in browser"
+            , onPress = Just SaveInstructions
+            }
+        , Element.Input.button (Styles.button ++ [ El.paddingXY 12 4 ])
+            { label = El.text "Export to JSON"
             , onPress = Just DownloadInstructions
             }
-        , Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
-            { label = El.text "Upload"
+        , Element.Input.button (Styles.button ++ [ El.paddingXY 12 4 ])
+            { label = El.text "Load from file"
             , onPress = Just UploadInstructions
             }
         , if model.composerSchedule |> Resource.isLoaded then
-            Element.Input.button [ externalClass "btn-scheduler", El.paddingXY 12 4 ]
+            Element.Input.button (Styles.button ++ [ El.paddingXY 12 4 ])
                 { label = El.text "Load from Composer"
-                , onPress = Just LoadFromComposer
+                , onPress = Just LoadFromConverter
                 }
 
           else
@@ -744,6 +740,7 @@ type Msg
     | StartInstructions Posix
     | StopInstructions
     | DownloadInstructions
+    | SaveInstructions
     | UploadInstructions
     | UploadSelected File.File
     | FileRead String
@@ -757,16 +754,24 @@ type Msg
     | AssociateRoleToDevice RoleName (Maybe String)
     | ChangeDeviceSelection RoleDeviceSelectState
     | Tick Posix
-    | LoadFromComposer
+    | LoadFromConverter
+    | ReceivedIncomingMsg IncomingMsg
+    | ScheduleNameChanged String
+
+
+type IncomingMsg
+    = InstructionsLoaded String Instructions
+    | ConverterScheduleUpdates (Resource String Instructions)
 
 
 type Effect
     = NoEffect
     | LogError String
+    | AskSaveInstructions String JE.Value
 
 
 createNewInstruction : Array RoleName -> Instructions -> Instructions
-createNewInstruction roles { time, instructions } =
+createNewInstruction _ { time, instructions } =
     let
         maxTime =
             time
@@ -804,6 +809,11 @@ arrayMove origin target arr =
     item
         |> Maybe.map (\item_ -> AE.insertAt target item_ withoutItem)
         |> Maybe.withDefault arr
+
+
+send : IncomingMsg -> Msg
+send =
+    ReceivedIncomingMsg
 
 
 update : Msg -> Model -> ( Model, Effect, Cmd Msg )
@@ -949,10 +959,23 @@ update msg model =
         DownloadInstructions ->
             ( model
             , NoEffect
-            , File.Download.string
-                "flowio-schedule.json"
-                "application/json"
-                (JE.encode 2 <| encodeInstructions model.instructions)
+            , Cmd.batch
+                [ File.Download.string
+                    (if String.isEmpty model.scheduleName then
+                        "flow-schedule.json"
+
+                     else
+                        model.scheduleName ++ ".json"
+                    )
+                    "application/json"
+                    (JE.encode 2 <| encodeInstructions model.instructions)
+                ]
+            )
+
+        SaveInstructions ->
+            ( model
+            , AskSaveInstructions model.scheduleName (encodeInstructions model.instructions)
+            , Cmd.none
             )
 
         UploadInstructions ->
@@ -1075,8 +1098,8 @@ update msg model =
 
         Tick posix ->
             case model.state of
-                Paused record ->
-                    ( model, LogError "Paused is not impelmented", Cmd.none )
+                Paused _ ->
+                    ( model, LogError "Paused is not implemented", Cmd.none )
 
                 Stopped ->
                     ( model, NoEffect, Cmd.none )
@@ -1160,7 +1183,7 @@ update msg model =
         StartInstructions posix ->
             ( { model | state = RunningInstructions { startTime = posix, commandIndex = 0 } }, NoEffect, Cmd.none )
 
-        LoadFromComposer ->
+        LoadFromConverter ->
             case model.composerSchedule of
                 Loaded instructions ->
                     ( { model
@@ -1173,6 +1196,24 @@ update msg model =
 
                 _ ->
                     ( model, NoEffect, Cmd.none )
+
+        ReceivedIncomingMsg incomingMsg ->
+            case incomingMsg of
+                InstructionsLoaded key instructions ->
+                    ( { model
+                        | instructions = instructions
+                        , roles = instructions.instructions |> Dict.keys |> Array.fromList
+                        , scheduleName = key
+                      }
+                    , NoEffect
+                    , Cmd.none
+                    )
+
+                ConverterScheduleUpdates resource ->
+                    ( { model | composerSchedule = resource }, NoEffect, Cmd.none )
+
+        ScheduleNameChanged name ->
+            ( { model | scheduleName = name }, NoEffect, Cmd.none )
 
 
 encodeInstructions : Instructions -> JE.Value

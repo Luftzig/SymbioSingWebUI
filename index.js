@@ -1,11 +1,12 @@
 import "./src/style.css"
 import "./src/svgbuttons.css"
 import {Elm} from "./src/Main.elm"
-import {DEFAULT_SERVICES, FlowIo} from "flow-io-web-lib"
+import {FlowIo} from "flow-io-web-lib"
 import ControlService from "flow-io-web-lib/lib/services/controlService"
 import {ConfigService} from "flow-io-web-lib/lib/services/configService"
 import {PowerOffService} from "flow-io-web-lib/lib/services/powerOffService"
-import {AnalogService} from "flow-io-web-lib/lib/services/analogService"
+
+import LocalStorage from "./src/localStorage"
 
 const flowIoDevices /*: FlowIo[]*/ = []
 
@@ -13,6 +14,8 @@ let app = Elm.Main.init({
   node: document.getElementById('app-root')
   , flags: {width: window.innerWidth, height: window.innerHeight}
 });
+
+LocalStorage.wire(app)
 
 app.ports.createDevice.subscribe(() => {
   const flowIo = new FlowIo({
@@ -168,3 +171,43 @@ app.ports.requestAnalogReadings_.subscribe(({deviceIndex, mode}) => {
     console.debug("readings:", r, ". We expect this value to be sent through the event listener.")
   })
 })
+
+
+
+
+/*
+ * from: https://github.com/wolfadex/wolfadex-components/blob/master/click-outside.js
+ * Used for detecting clicks outside of 1 or more elements.
+ *
+ * Add this script at the top of your HTML file and insert it into your DOM with:
+ *
+ *     <click-outside id="click-parent">
+ *       <!-- children -->
+ *     </click-outside>
+ *
+ * Then in your JS detect clicks outside with:
+ *
+ *     document
+ *       .getElementById("click-parent")
+ *       .addEventListener("click-outside", function() {
+ *         // Handle click outside here
+ *       });
+ */
+customElements.define(
+  "click-outside",
+  class extends HTMLElement {
+    connectedCallback() {
+      window.addEventListener("click", this.clickListener.bind(this));
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener("click", this.clickListener);
+    }
+
+    clickListener(event) {
+      if (!this.contains(event.target)) {
+        this.dispatchEvent(new CustomEvent("click-outside"));
+      }
+    }
+  }
+);

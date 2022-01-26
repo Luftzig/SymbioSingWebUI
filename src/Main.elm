@@ -6,9 +6,11 @@ import Browser
 import Browser.Events
 import Color.Dracula as Dracula
 import Composer.Converter as Converter
+import Composer.Sequencer as Sequencer exposing (IncomingMsg(..), OutgoingMsg(..))
 import Element as El
 import Element.Background as UIBackground
 import Element.Border as UIBorder
+import Element.Events
 import Element.Font as UIFont
 import Element.Input as UIInput
 import Element.Region as UIRegion
@@ -18,8 +20,10 @@ import Html
 import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
-import Scheduler
+import LocalStorage
+import Scheduler exposing (IncomingMsg(..))
 import Sensors
+import Set exposing (Set)
 import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, vacuumButton)
 import Task
 import Time
@@ -40,7 +44,16 @@ type alias Model =
     , windowSize : { width : Int, height : Int }
     , errorLog : List String
     , errorLogState : ErrorLogState
+    , savedMenuState : PanelState
+    , savedSchedules : Set String
+    , sequencerData : Sequencer.Model
+    , dialog : DialogState
     }
+
+
+type DialogState
+    = DialogHidden
+    | SequencerDialogShown
 
 
 type ErrorLogState
@@ -54,10 +67,21 @@ type PanelState
     | PanelOpen
 
 
+togglePanel : PanelState -> PanelState
+togglePanel state =
+    case state of
+        PanelOpen ->
+            PanelFolded
+
+        PanelFolded ->
+            PanelOpen
+
+
 type MainTab
     = SchedulerTab
     | SensorReadingsTab
     | NotationConverterTab
+    | SequencerTab
 
 
 type Msg
@@ -91,6 +115,14 @@ type Msg
     | WindowDimensionsChanged Int Int
     | NoAction String
     | ToggleErrorLog
+    | ScheduleLoaded String String
+    | ReceivedSavedSchedules (List String)
+    | ToggleSavedMenu
+    | SavedScheduleRequested String
+    | SequencerMessage Sequencer.Msg
+    | SendInstructionsToSequencerRequestedFromScheduler
+    | SendInstructionsToSequencerRequestedFromConverter
+    | DialogBackDropClicked
 
 
 initModel : { width : Int, height : Int } -> Model
@@ -109,6 +141,10 @@ initModel { width, height } =
     , windowSize = { width = width, height = height }
     , errorLog = []
     , errorLogState = LogClosedAndRead
+    , savedMenuState = PanelFolded
+    , savedSchedules = Set.empty
+    , sequencerData = Sequencer.init
+    , dialog = DialogHidden
     }
 
 
@@ -121,7 +157,14 @@ sendMessage msg =
 main : Program { width : Int, height : Int } Model Msg
 main =
     Browser.document
-        { init = \windowSize -> ( initModel windowSize, sendMessage AddDevice )
+        { init =
+            \windowSize ->
+                ( initModel windowSize
+                , Cmd.batch
+                    [ sendMessage AddDevice
+                    , LocalStorage.getAllKeys ()
+                    ]
+                )
         , subscriptions = subscriptions
         , update = update
         , view = view
@@ -142,6 +185,15 @@ subscriptions model =
                             False
                 )
                 model.listeners
+
+        localStorageListener : LocalStorage.StorageEvent -> Msg
+        localStorageListener event =
+            case event of
+                LocalStorage.Loaded key value ->
+                    ScheduleLoaded key (Debug.log "Loaded value" value)
+
+                LocalStorage.ReceivedAllKeys strings ->
+                    ReceivedSavedSchedules strings
     in
     Sub.batch
         ([ listenToDeviceStatus DeviceStatusChanged
@@ -150,6 +202,8 @@ subscriptions model =
          , listenToPowerOffStatus DevicePowerOffStatusChange
          , listenToAnalogReadings SensorReadingReceived
          , Browser.Events.onResize WindowDimensionsChanged
+         , LocalStorage.listen localStorageListener
+         , Sequencer.subscriptions model.sequencerData |> Sub.map SequencerMessage
          ]
             ++ (if shouldListenToControlService then
                     [ listenToDeviceControlStatus ControlServiceUpdate ]
@@ -171,8 +225,11 @@ update msg model =
 
                 newScheduler =
                     { scheduler | devices = newDevices }
+
+                ( sequencerModel, _ ) =
+                    handleSequencerMessage <| Sequencer.send (DevicesChanged newDevices)
             in
-            { model_ | devices = newDevices, scheduler = newScheduler }
+            { model_ | devices = newDevices, scheduler = newScheduler, sequencerData = sequencerModel.sequencerData }
 
         updateDevice : Int -> (FlowIODevice -> FlowIODevice) -> Array FlowIODevice
         updateDevice index updater =
@@ -207,6 +264,66 @@ update msg model =
                         LogOpen ->
                             LogOpen
             }
+
+        handleSchedulerUpdate messageToScheduler =
+            let
+                ( scheduler, effect, cmd ) =
+                    Scheduler.update messageToScheduler model.scheduler
+
+                ( effectedModel, effectedCmd ) =
+                    case effect of
+                        Scheduler.NoEffect ->
+                            ( model, Cmd.none )
+
+                        Scheduler.LogError string ->
+                            ( logError string, Cmd.none )
+
+                        Scheduler.AskSaveInstructions key value ->
+                            ( { model | savedSchedules = Set.insert key model.savedSchedules }
+                            , Cmd.batch
+                                [ LocalStorage.save key value
+                                , LocalStorage.getAllKeys ()
+                                ]
+                            )
+            in
+            ( { effectedModel | scheduler = scheduler }
+            , Cmd.batch
+                [ Cmd.map SchedulerMessage cmd
+                , effectedCmd
+                ]
+            )
+
+        handleSequencerMessage sequencerMsg =
+            let
+                ( newModel, effect, cmd ) =
+                    Sequencer.update sequencerMsg model.sequencerData
+
+                ( effectedModel, effectCommand ) =
+                    case effect of
+                        NoMessage ->
+                            ( model, Cmd.none )
+
+                        GetInstructionFromScheduler ->
+                            ( model, sendMessage SendInstructionsToSequencerRequestedFromScheduler )
+
+                        GetInstructionFromConverter ->
+                            ( model, sendMessage SendInstructionsToSequencerRequestedFromConverter )
+
+                        LogError error ->
+                            ( logError error, Cmd.none )
+
+                        ShowDialog ->
+                            ( { model | dialog = SequencerDialogShown }, Cmd.none )
+
+                        HideDialog ->
+                            ( { model | dialog = DialogHidden }, Cmd.none )
+            in
+            ( { effectedModel | sequencerData = newModel }
+            , Cmd.batch
+                [ cmd |> Cmd.map SequencerMessage
+                , effectCommand
+                ]
+            )
     in
     case msg of
         ConnectToDevice deviceIndex ->
@@ -370,19 +487,15 @@ update msg model =
             ( updateCommand deviceIndex newCommand, Cmd.none )
 
         SchedulerMessage message ->
-            let
-                ( scheduler, effect, cmd ) =
-                    Scheduler.update message model.scheduler
+            handleSchedulerUpdate message
 
-                effectedModel =
-                    case effect of
-                        Scheduler.NoEffect ->
-                            model
+        ScheduleLoaded key value ->
+            case Json.Decode.decodeString Scheduler.instructionsDecoder value of
+                Ok newInstructions ->
+                    handleSchedulerUpdate (Scheduler.send <| InstructionsLoaded key newInstructions)
 
-                        Scheduler.LogError string ->
-                            logError string
-            in
-            ( { effectedModel | scheduler = scheduler }, Cmd.map SchedulerMessage cmd )
+                Err error ->
+                    ( logError (Json.Decode.errorToString error), Cmd.none )
 
         ActionClicked deviceIndex action ->
             let
@@ -540,16 +653,9 @@ update msg model =
             let
                 ( composerData, cmd ) =
                     Converter.update composerMsg model.composerData
-
-                oldScheduler =
-                    model.scheduler
-
-                newScheduler =
-                    { oldScheduler | composerSchedule = composerData.schedule }
             in
             ( { model
                 | composerData = composerData
-                , scheduler = newScheduler
               }
             , cmd |> Cmd.map ComposerMessage
             )
@@ -570,6 +676,37 @@ update msg model =
             , Cmd.none
             )
 
+        ReceivedSavedSchedules strings ->
+            ( { model | savedSchedules = Set.fromList strings }, Cmd.none )
+
+        ToggleSavedMenu ->
+            ( { model | savedMenuState = togglePanel model.savedMenuState }, Cmd.none )
+
+        SavedScheduleRequested key ->
+            ( model, LocalStorage.load key )
+
+        SequencerMessage sequencerMsg ->
+            handleSequencerMessage sequencerMsg
+
+        SendInstructionsToSequencerRequestedFromScheduler ->
+            handleSequencerMessage <|
+                Sequencer.send
+                    (ReceivedNewPart
+                        model.scheduler.scheduleName
+                        model.scheduler.instructions
+                    )
+
+        SendInstructionsToSequencerRequestedFromConverter ->
+            handleSequencerMessage <|
+                Sequencer.send
+                    (ReceivedNewPart
+                        model.scheduler.scheduleName
+                        model.scheduler.instructions
+                    )
+
+        DialogBackDropClicked ->
+            ( { model | dialog = DialogHidden }, Cmd.none )
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -586,12 +723,13 @@ body model =
         , El.padding 20
         , UIFont.color Dracula.white
         , UIFont.family [ UIFont.typeface "Overpass", UIFont.typeface "Open Sans", UIFont.typeface "Helvetica", UIFont.sansSerif ]
-        , UIFont.size 15
+        , Styles.fontSize.standard
         , UIBackground.color Dracula.black
+        , El.inFront <| displayDialog model
         ]
     <|
         El.column [ El.width <| El.fill, El.height <| El.fill, El.spacing 10 ]
-            [ header
+            [ header model
             , El.row [ El.spacing 10, El.width El.fill, El.height <| El.fillPortion 10, El.alignTop ]
                 [ displayDeviceList model
                 , displayServices model
@@ -602,7 +740,7 @@ body model =
 
 
 tabs : Model -> El.Element Msg
-tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel } =
+tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel, sequencerData } =
     let
         tabSize =
             if servicesPanel.panelState == PanelFolded then
@@ -632,21 +770,27 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel }
         [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
             [ UIInput.button (tabStyle (openTab == SchedulerTab))
                 { label =
-                    El.text
-                        "Scheduler"
+                    El.row [ El.spacing 4 ]
+                        [ Images.schedulerIcon
+                        , El.text "Scheduler"
+                        ]
                 , onPress = Just <| ChangeTabTo SchedulerTab
                 }
             , UIInput.button (tabStyle (openTab == SensorReadingsTab))
                 { label =
-                    El.text
-                        "Sensors"
+                    El.row [ El.spacing 4 ]
+                        [ Images.sensorsIcon, El.text "Sensors" ]
                 , onPress = Just <| ChangeTabTo SensorReadingsTab
                 }
             , UIInput.button (tabStyle (openTab == NotationConverterTab))
                 { label =
-                    El.text
-                        "Convert Score"
+                    El.row [ El.spacing 4 ] [ Images.converterIcon, El.text "Convert Score" ]
                 , onPress = Just <| ChangeTabTo NotationConverterTab
+                }
+            , UIInput.button (tabStyle (openTab == SequencerTab))
+                { label =
+                    El.row [ El.spacing 4 ] [ Images.sequencerIcon, El.text "Sequencer" ]
+                , onPress = Just <| ChangeTabTo SequencerTab
                 }
             ]
         , case openTab of
@@ -659,6 +803,9 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel }
 
             NotationConverterTab ->
                 El.map ComposerMessage <| Converter.view composerData
+
+            SequencerTab ->
+                El.map SequencerMessage <| Sequencer.view sequencerData
         ]
 
 
@@ -710,7 +857,7 @@ displayDeviceList model =
                                             Dracula.gray
                                 in
                                 UIInput.button
-                                    [ UIFont.size 11
+                                    [ Styles.fontSize.small
                                     , UIFont.color color
                                     , UIBackground.color backgroundColor
                                     , UIBorder.rounded 4
@@ -732,7 +879,7 @@ displayDeviceList model =
                                 , UIInput.button [ UIRegion.description "Disconnect", El.alignLeft ]
                                     { label = buttonCssIcon "icon-connected" "Connected", onPress = Just <| DisconnectDevice index }
                                 ]
-                            , El.paragraph [ UIFont.size 10, El.width El.fill ]
+                            , El.paragraph [ Styles.fontSize.smaller, El.width El.fill ]
                                 [ El.text "id: "
                                 , El.text <| Maybe.withDefault "Unknown" <| Maybe.map .id device.details
                                 ]
@@ -828,7 +975,7 @@ displayServices { devices, servicesPanel } =
         displayControlService index device =
             case ( device.status, device.controlServiceStatus ) of
                 ( Connected, Just hardwareStatus ) ->
-                    El.column [ El.width El.fill, UIFont.size 16 ]
+                    El.column [ El.width El.fill, Styles.fontSize.large ]
                         [ El.text
                             ("Status for "
                                 ++ String.fromInt (index + 1)
@@ -885,7 +1032,7 @@ displayServices { devices, servicesPanel } =
                         ]
                         El.none
                 ]
-                { label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| El.text "PWM"
+                { label = UIInput.labelAbove [ Styles.fontSize.small, UIFont.center ] <| El.text "PWM"
                 , onChange = round >> onUpdate
                 , max = 255
                 , min = 0
@@ -895,7 +1042,7 @@ displayServices { devices, servicesPanel } =
                 }
 
         actions : (FlowIOAction -> Msg) -> FlowIOAction -> El.Element Msg
-        actions onMouseDown currentValue =
+        actions onMouseDown _ =
             El.row [ El.spacing 5, El.padding 5 ]
                 [ inflateButton (onMouseDown Inflate) ActionReleased
                 , vacuumButton (onMouseDown Vacuum) ActionReleased
@@ -909,7 +1056,7 @@ displayServices { devices, servicesPanel } =
                 checkbox label port_ currentValue =
                     UIInput.checkbox []
                         { onChange = portFromBool >> onUpdate port_
-                        , label = UIInput.labelAbove [ UIFont.size 12, UIFont.center ] <| El.text label
+                        , label = UIInput.labelAbove [ Styles.fontSize.small, UIFont.center ] <| El.text label
                         , icon = UIInput.defaultCheckbox
                         , checked = isPortOpen currentValue
                         }
@@ -923,7 +1070,7 @@ displayServices { devices, servicesPanel } =
                 ]
 
         displayStatusDetailsDetails : Int -> ControlServiceStatus -> El.Element Msg
-        displayStatusDetailsDetails deviceIndex details =
+        displayStatusDetailsDetails _ details =
             let
                 displayPort label status =
                     El.el
@@ -939,7 +1086,7 @@ displayServices { devices, servicesPanel } =
                              else
                                 Dracula.white
                             )
-                        , UIFont.size 10
+                        , Styles.fontSize.smaller
                         , UIFont.color
                             (if status then
                                 Dracula.white
@@ -1034,7 +1181,7 @@ displayServices { devices, servicesPanel } =
                 }
 
         displayBatteryService : Int -> FlowIODevice -> El.Element Msg
-        displayBatteryService index device =
+        displayBatteryService _ _ =
             El.none
 
         displayPowerOffService : Int -> FlowIODevice -> El.Element Msg
@@ -1276,7 +1423,7 @@ displayServices { devices, servicesPanel } =
                             BatteryService ->
                                 displayBatteryService deviceIndex device
 
-                            UnknownService string ->
+                            UnknownService _ ->
                                 El.none
 
                             PowerOffService ->
@@ -1308,10 +1455,45 @@ displayServices { devices, servicesPanel } =
         )
 
 
-header : El.Element Msg
-header =
-    El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, UIFont.size 24 ] <|
-        El.text "SymbioSing Control Panel"
+header : Model -> El.Element Msg
+header { savedMenuState, savedSchedules } =
+    let
+        savedMenu =
+            case savedMenuState of
+                PanelFolded ->
+                    El.none
+
+                PanelOpen ->
+                    Set.toList savedSchedules
+                        |> List.filter (not << String.isEmpty)
+                        |> List.map savedItem
+                        |> El.column
+                            (Styles.card
+                                ++ Styles.colorsNormal
+                                ++ [ Styles.elevatedShadow ]
+                            )
+
+        savedItem key =
+            UIInput.button Styles.button
+                { onPress = Just <| SavedScheduleRequested key
+                , label = El.text key
+                }
+    in
+    El.row [ fullWidth, El.centerX, El.alignTop ]
+        [ El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, Styles.fontSize.huge ] <|
+            El.text "SymbioSing Control Panel"
+        , El.el [ El.alignRight, El.below savedMenu ] <|
+            UIInput.button (Styles.button ++ [ El.alignRight ])
+                { onPress = Just ToggleSavedMenu
+                , label =
+                    case savedMenuState of
+                        PanelFolded ->
+                            El.text "Saved Schedules ◀️"
+
+                        PanelOpen ->
+                            El.text "Saved Schedules ⏏️"
+                }
+        ]
 
 
 footer : Model -> El.Element Msg
@@ -1334,7 +1516,7 @@ footer { errorLog, errorLogState } =
                                 , label = El.text "X"
                                 }
                             ]
-                            :: List.map (El.el [] << El.text) errorLog
+                            :: List.map (El.el [ fullWidth ] << El.text) errorLog
                         )
 
                 _ ->
@@ -1366,3 +1548,30 @@ footer { errorLog, errorLogState } =
         [ El.el [ El.alignLeft, El.above errors ] <|
             UIInput.button [] { onPress = Just ToggleErrorLog, label = El.row [] errorCount }
         ]
+
+
+displayDialog : Model -> El.Element Msg
+displayDialog { dialog, sequencerData } =
+    case dialog of
+        DialogHidden ->
+            El.none
+
+        SequencerDialogShown ->
+            El.el
+                [ fullWidth
+                , El.height El.fill
+                , El.centerX
+                , El.centerY
+                , El.behindContent <|
+                    El.el
+                        [ fullWidth
+                        , El.height El.fill
+                        , Element.Events.onClick DialogBackDropClicked
+                        ]
+                        El.none
+                , UIBackground.color <| El.rgba255 200 200 200 0.2
+                ]
+            <|
+                (Sequencer.viewDialog sequencerData
+                    |> El.map SequencerMessage
+                )
