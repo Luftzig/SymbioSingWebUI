@@ -203,6 +203,7 @@ subscriptions model =
          , listenToAnalogReadings SensorReadingReceived
          , Browser.Events.onResize WindowDimensionsChanged
          , LocalStorage.listen localStorageListener
+         , Sequencer.subscriptions model.sequencerData |> Sub.map SequencerMessage
          ]
             ++ (if shouldListenToControlService then
                     [ listenToDeviceControlStatus ControlServiceUpdate ]

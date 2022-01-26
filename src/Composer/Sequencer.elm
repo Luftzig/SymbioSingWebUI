@@ -1,4 +1,4 @@
-module Composer.Sequencer exposing (IncomingMsg(..), Model, Msg, OutgoingMsg(..), init, send, update, view, viewDialog)
+module Composer.Sequencer exposing (IncomingMsg(..), Model, Msg, OutgoingMsg(..), init, send, subscriptions, update, view, viewDialog)
 
 import Array exposing (Array)
 import Color.Dracula as Dracula
@@ -12,10 +12,10 @@ import Element.Input exposing (button, checkbox, labelHidden)
 import Element.Region as Region
 import Extra.Array as Array
 import Extra.Dict as Dict
-import Extra.TypedTime as TypedTime
+import Extra.TypedTime as TypedTime exposing (TypedTime)
 import File exposing (File)
 import File.Select
-import FlowIO exposing (DeviceId, FlowIODevice)
+import FlowIO exposing (DeviceId, FlowIOCommand, FlowIODevice, encodeCommand)
 import Html.Attributes
 import Images
 import Json.Decode as JD
@@ -25,6 +25,7 @@ import Scheduler exposing (Instructions, RoleName, instructionsDecoder)
 import Set exposing (Set)
 import Styles exposing (fullWidth)
 import Task
+import Time exposing (Posix)
 
 
 type alias Model =
@@ -35,6 +36,7 @@ type alias Model =
     , instructionsStorage : Set String
     , dialog : DialogStatus
     , showPartDetails : Dict String Collapsable
+    , runStatus : RunStatus
     }
 
 
@@ -60,6 +62,17 @@ type DialogStatus
     | AssignRoleDialog String
 
 
+type alias CommandsEntry =
+    { startTime : TypedTime
+    , commands : List { deviceId : DeviceId, deviceIndex : Int, command : FlowIOCommand }
+    }
+
+
+type RunStatus
+    = NotRunning
+    | Running { startTime : TypedTime, nextCommands : List CommandsEntry, elapsedTime : TypedTime }
+
+
 init : Model
 init =
     { availableParts = Dict.empty
@@ -69,6 +82,7 @@ init =
     , instructionsStorage = Set.empty
     , dialog = NoDialog
     , showPartDetails = Dict.empty
+    , runStatus = NotRunning
     }
 
 
@@ -81,7 +95,6 @@ type Msg
     | RequestUploadInstructions
     | InstructionsFileSelected File
     | InstructionFileRead String String
-    | PlaySequence
     | OpenSaveSequenceDialog
     | DownloadSequence
     | RequestSequenceUpload
@@ -92,6 +105,10 @@ type Msg
     | MovePart Int MoveDirection
     | RoleClicked String
     | DeviceAssignmentChanged String FlowIODevice Bool
+    | PlaySequenceRequested
+    | PlaySequenceStarted (List CommandsEntry) Posix
+    | PlaySequenceStopped
+    | Tick Posix
 
 
 type MoveDirection
@@ -123,6 +140,16 @@ type OutgoingMsg
     | LogError String
     | ShowDialog
     | HideDialog
+
+
+subscriptions : Model -> Sub Msg
+subscriptions { runStatus } =
+    case runStatus of
+        NotRunning ->
+            Sub.none
+
+        Running _ ->
+            Time.every 5 Tick
 
 
 update : Msg -> Model -> ( Model, OutgoingMsg, Cmd Msg )
@@ -174,9 +201,6 @@ update msg model =
 
                 Err error ->
                     ( model, LogError (JD.errorToString error), Cmd.none )
-
-        PlaySequence ->
-            Debug.todo "Play Sequence"
 
         OpenSaveSequenceDialog ->
             ( { model | dialog = SaveSequenceDialog "" }, ShowDialog, Cmd.none )
@@ -291,6 +315,137 @@ update msg model =
                     model.roleAssignments |> Dict.insert role newAssignments
             in
             ( { model | roleAssignments = newRoles }, NoMessage, Cmd.none )
+
+        PlaySequenceRequested ->
+            let
+                devices =
+                    model.availableDevices |> Array.toList
+
+                commands : List CommandsEntry
+                commands =
+                    model.sequence
+                        |> List.mapAccuml transformTimes TypedTime.zero
+                        |> Tuple.second
+                        |> List.concatMap toCommandsWithRoles
+                        |> List.map toCommandsWithDevice
+
+                transformTimes : TypedTime -> ( String, Instructions ) -> ( TypedTime, Instructions )
+                transformTimes accTime ( _, instructions ) =
+                    let
+                        lastTime =
+                            instructions.time |> Array.last |> Maybe.withDefault TypedTime.zero
+
+                        updatedTime =
+                            instructions.time
+                                |> Array.map (TypedTime.add accTime)
+                    in
+                    ( lastTime |> TypedTime.add accTime
+                    , { instructions | time = updatedTime }
+                    )
+
+                toCommandsWithRoles : Instructions -> List ( TypedTime, List ( RoleName, FlowIOCommand ) )
+                toCommandsWithRoles instructions =
+                    let
+                        transpose : Dict RoleName (Array FlowIOCommand) -> List (List ( RoleName, FlowIOCommand ))
+                        transpose dict =
+                            dict
+                                |> Dict.map (\k arr -> arr |> Array.map (\c -> ( k, c )) |> Array.toList)
+                                |> Dict.values
+                    in
+                    List.zip (instructions.time |> Array.toList)
+                        (instructions.instructions |> transpose)
+
+                toCommandsWithDevice : ( TypedTime, List ( RoleName, FlowIOCommand ) ) -> CommandsEntry
+                toCommandsWithDevice ( t, roleCommands ) =
+                    { startTime = t
+                    , commands = List.concatMap mapDevices roleCommands
+                    }
+
+                mapDevices :
+                    ( RoleName, FlowIOCommand )
+                    -> List { deviceId : DeviceId, deviceIndex : Int, command : FlowIOCommand }
+                mapDevices ( roleName, flowIOCommand ) =
+                    let
+                        assignedDevices =
+                            model.roleAssignments
+                                |> Dict.get roleName
+                                |> Maybe.withDefault Set.empty
+
+                        getDeviceIndex : DeviceId -> Maybe Int
+                        getDeviceIndex deviceId =
+                            devices
+                                |> List.findIndex
+                                    (\device ->
+                                        device.details
+                                            |> Maybe.map .id
+                                            |> (==) (Just deviceId)
+                                    )
+
+                        assignedCommands =
+                            assignedDevices
+                                |> Set.toList
+                                |> List.filterMap
+                                    (\deviceId ->
+                                        getDeviceIndex deviceId
+                                            |> Maybe.map
+                                                (\index ->
+                                                    { deviceId = deviceId, deviceIndex = index, command = flowIOCommand }
+                                                )
+                                    )
+                    in
+                    assignedCommands
+            in
+            ( model, NoMessage, Time.now |> Task.perform (PlaySequenceStarted commands) )
+
+        PlaySequenceStarted commands posix ->
+            ( { model
+                | runStatus =
+                    Running
+                        { startTime = TypedTime.fromPosix posix
+                        , nextCommands = commands
+                        , elapsedTime = TypedTime.zero
+                        }
+              }
+            , NoMessage
+            , Cmd.none
+            )
+
+        PlaySequenceStopped ->
+            ( { model | runStatus = NotRunning }, NoMessage, Cmd.none )
+
+        Tick tickTime ->
+            case model.runStatus of
+                NotRunning ->
+                    ( model, NoMessage, Cmd.none )
+
+                Running runState ->
+                    case runState.nextCommands of
+                        entry :: rest ->
+                            let
+                                runningTime =
+                                    TypedTime.fromPosix tickTime |> TypedTime.subtract runState.startTime
+
+                                ( nextCommands, cmds ) =
+                                    if runningTime |> TypedTime.greaterEqual entry.startTime then
+                                        ( rest, List.map toCmd entry.commands |> Cmd.batch )
+
+                                    else
+                                        ( runState.nextCommands, Cmd.none )
+
+                                toCmd : { a | deviceIndex : Int, command : FlowIOCommand } -> Cmd msg
+                                toCmd e =
+                                    FlowIO.sendCommand
+                                        { deviceIndex = e.deviceIndex
+                                        , command = encodeCommand e.command
+                                        }
+
+                                newState =
+                                    Running { runState | elapsedTime = runningTime, nextCommands = nextCommands }
+                            in
+                            ( { model | runStatus = newState }, NoMessage, cmds )
+
+                        [] ->
+                            ( { model | runStatus = NotRunning }, NoMessage, Cmd.none )
 
 
 view : Model -> Element Msg
@@ -548,19 +703,36 @@ viewAvailableParts model =
 viewControls : Model -> Element Msg
 viewControls model =
     row [ centerX, alignBottom ]
-        [ button Styles.buttonPrimary
-            { label = text "Play"
-            , onPress = Just PlaySequence
-            }
-        , button Styles.button
+        [ row [ spacing 5, width <| fillPortion 3 ] <|
+            case model.runStatus of
+                NotRunning ->
+                    [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
+                        { label = row [ spacing 5 ] [ Images.playIcon, text "Play" ]
+                        , onPress = Just PlaySequenceRequested
+                        }
+                    , el [ width <| fillPortion 2 ] none
+                    ]
+
+                Running status ->
+                    [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
+                        { label = row [ spacing 5 ] [ Images.stopIcon, text "Stop" ]
+                        , onPress = Just PlaySequenceStopped
+                        }
+                    , el [ width <| fillPortion 2 ] <|
+                        text <|
+                            TypedTime.toFormattedString
+                                TypedTime.HoursMinutesSecondsHundredths
+                                status.elapsedTime
+                    ]
+        , button ((width <| fillPortion 1) :: Styles.button)
             { label = text "Save"
             , onPress = Just OpenSaveSequenceDialog
             }
-        , button Styles.button
+        , button ((width <| fillPortion 1) :: Styles.button)
             { label = text "Download"
             , onPress = Just DownloadSequence
             }
-        , button Styles.button
+        , button ((width <| fillPortion 1) :: Styles.button)
             { label = text "Upload"
             , onPress = Just RequestSequenceUpload
             }

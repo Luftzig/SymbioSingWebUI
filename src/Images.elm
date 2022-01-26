@@ -312,21 +312,26 @@ schedulerIcon =
     svgElement 18 [] <|
         Material.Icons.view_week 18 Inherit
 
+
 sensorsIcon =
     svgElement 18 [] <|
         Material.Icons.sensors 18 Inherit
+
 
 converterIcon =
     svgElement 18 [] <|
         Material.Icons.music_note 18 Inherit
 
+
 sequencerIcon =
     svgElement 18 [] <|
         Material.Icons.view_day 18 Inherit
 
+
 expandIcon =
     svgElement 18 [] <|
         Material.Icons.expand_more 18 Inherit
+
 
 collapseIcon =
     svgElement 18 [] <|
@@ -337,7 +342,17 @@ addCircleIcon =
     svgElement 18 [] <|
         Material.Icons.add_circle 18 Inherit
 
+
 removeCircleIcon =
     svgElement 18 [] <|
         Material.Icons.remove_circle 18 Inherit
 
+
+playIcon =
+    svgElement 18 [] <|
+        Material.Icons.not_started 18 Inherit
+
+
+stopIcon =
+    svgElement 18 [] <|
+        Material.Icons.stop 18 Inherit

@@ -461,13 +461,13 @@ devicesTable model =
                                     isCorrectlyOrdered =
                                         case ( maybePrevious, time, maybeNext ) of
                                             ( Just previous, current, Just next ) ->
-                                                (previous |> TypedTime.lt current) && (current |> TypedTime.lt next)
+                                                (previous |> TypedTime.lessThan current) && (current |> TypedTime.lessThan next)
 
                                             ( Nothing, current, Just next ) ->
-                                                current |> TypedTime.lt next
+                                                current |> TypedTime.lessThan next
 
                                             ( Just previous, current, Nothing ) ->
-                                                previous |> TypedTime.lt current
+                                                previous |> TypedTime.lessThan current
 
                                             ( Nothing, _, Nothing ) ->
                                                 True

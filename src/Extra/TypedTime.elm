@@ -6,7 +6,7 @@ module Extra.TypedTime exposing
     , equal
     , equalWithin
     , hours
-    , lt
+    , lessThan
     , milliseconds
     , minutes
     , multiply
@@ -18,9 +18,10 @@ module Extra.TypedTime exposing
     , toMillisecondsString
     , toMinutes
     , zero
-    , sum)
+    , sum, fromPosix, subtract, greaterEqual)
 
 import Float.Extra
+import Time exposing (Posix)
 
 
 type TypedTime
@@ -47,6 +48,11 @@ hours h =
     Milliseconds (h * 60 * 60 * 1000)
 
 
+fromPosix : Posix -> TypedTime
+fromPosix posix =
+    posix |> Time.posixToMillis |> toFloat |> milliseconds
+
+
 zero : TypedTime
 zero =
     Milliseconds 0
@@ -62,9 +68,14 @@ equalWithin tolerance op2 op1 =
     Float.Extra.equalWithin (toMilliseconds tolerance) (toMilliseconds op1) (toMilliseconds op2)
 
 
-lt : TypedTime -> TypedTime -> Bool
-lt t2 t1 =
+lessThan : TypedTime -> TypedTime -> Bool
+lessThan t2 t1 =
     toMilliseconds t1 < toMilliseconds t2
+
+greaterEqual : TypedTime -> TypedTime -> Bool
+greaterEqual t2 t1 =
+    not (t1 |> lessThan t2)
+
 
 
 divide : Float -> TypedTime -> TypedTime
