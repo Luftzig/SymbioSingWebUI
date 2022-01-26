@@ -176,7 +176,8 @@ update msg model =
             ( model, GetInstructionFromConverter, Cmd.none )
 
         LoadFromStorageRequested ->
-            ( { model | dialog = LoadFromStorageDialog }, ShowDialog, Cmd.none )
+            --( { model | dialog = LoadFromStorageDialog }, ShowDialog, Cmd.none )
+            (model, LogError "Loading schedule from local storage not supported yet", Cmd.none)
 
         LoadFromStorage key ->
             ( model, NoMessage, LocalStorage.load key )
@@ -206,10 +207,10 @@ update msg model =
             ( { model | dialog = SaveSequenceDialog "" }, ShowDialog, Cmd.none )
 
         DownloadSequence ->
-            Debug.todo "Download sequence"
+            ( model, LogError "Download sequence not supported yet", Cmd.none)
 
         RequestSequenceUpload ->
-            Debug.todo "Request sequence upload"
+            ( model, LogError "Uploading sequences not supported yet", Cmd.none)
 
         CloseDialog ->
             ( { model | dialog = NoDialog }, HideDialog, Cmd.none )
@@ -329,6 +330,12 @@ update msg model =
                         |> List.concatMap toCommandsWithRoles
                         |> List.map toCommandsWithDevice
 
+                {- todo: when we combine two instruction sets, the second starts with time 0, then we have
+                   have two entries with the same start time, and either both will be executed (the second
+                   with 1 tick delay) or the second would be skipped. Neither is good. We should remove the
+                   first one of the unequal pair.
+                   --|> deduplicate
+                -}
                 transformTimes : TypedTime -> ( String, Instructions ) -> ( TypedTime, Instructions )
                 transformTimes accTime ( _, instructions ) =
                     let
