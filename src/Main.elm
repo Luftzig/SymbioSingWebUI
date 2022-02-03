@@ -753,7 +753,6 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel, 
                 { height = toFloat windowSize.height * 0.85 |> round
                 , width = toFloat windowSize.width * (8 / 12) - 80 |> round
                 }
-
     in
     El.column [ El.spacing 4, tabSize.width |> El.px |> El.width, El.alignTop, tabSize.height |> El.px |> El.height ]
         [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
@@ -1483,7 +1482,9 @@ header { savedMenuState, savedSchedules } =
                         |> El.column
                             (Styles.card
                                 ++ Styles.colorsNormal
-                                ++ [ Styles.elevatedShadow ]
+                                ++ [ Styles.elevatedShadow
+                                   , El.alignRight
+                                   ]
                             )
 
         savedItem key =
