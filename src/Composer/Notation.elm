@@ -493,6 +493,7 @@ type alias IntermediateRepr =
     , action : IntermediateAction
     , dynamic : Dynamic
     , measureNumber : Int
+    , numberInMeasure : Int
     }
 
 
@@ -541,6 +542,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                               , action = NoChange
                               , dynamic = Pianississimo
                               , measureNumber = lastMeasure |> Maybe.map ((+) 1) |> Maybe.withDefault 0
+                              , numberInMeasure = 0
                               }
                             ]
                    )
@@ -554,6 +556,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                     , action : IntermediateAction
                     , dynamic : Dynamic
                     , measureNumber : Int
+                    , numberInMeasure : Int
                     }
         measureToIntermediate partName { divisionsPerQuarter, notes, number } =
             let
@@ -570,35 +573,69 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                     durationPerDivision |> TypedTime.multiply (toFloat d)
 
                 noteToIntermediate :
-                    HapticNote
-                    -> { duration : TypedTime, action : IntermediateAction, dynamic : Dynamic, measureNumber : Int }
-                noteToIntermediate hapticNote =
+                    Int
+                    -> HapticNote
+                    ->
+                        { duration : TypedTime
+                        , action : IntermediateAction
+                        , dynamic : Dynamic
+                        , measureNumber : Int
+                        , numberInMeasure : Int
+                        }
+                noteToIntermediate noteIndex hapticNote =
                     case hapticNote of
                         Rest dynamic t ->
-                            { duration = toDuration t, action = Release, dynamic = dynamic, measureNumber = number }
+                            { duration = toDuration t
+                            , action = Release
+                            , dynamic = dynamic
+                            , measureNumber = number
+                            , numberInMeasure = noteIndex
+                            }
 
                         Hold dynamic t ->
-                            { duration = toDuration t, action = NoChange, dynamic = dynamic, measureNumber = number }
+                            { duration = toDuration t
+                            , action = NoChange
+                            , dynamic = dynamic
+                            , measureNumber = number
+                            , numberInMeasure = noteIndex
+                            }
 
                         Actuate dynamic t ->
-                            { duration = toDuration t, action = Inflate, dynamic = dynamic, measureNumber = number }
+                            { duration = toDuration t
+                            , action = Inflate
+                            , dynamic = dynamic
+                            , measureNumber = number
+                            , numberInMeasure = noteIndex
+                            }
 
                         Trill t ->
-                            { duration = toDuration t, action = Vibrate, dynamic = Mezzopiano, measureNumber = number }
+                            { duration = toDuration t
+                            , action = Vibrate
+                            , dynamic = Mezzopiano
+                            , measureNumber = number
+                            , numberInMeasure = noteIndex
+                            }
             in
             notes
-                |> List.map noteToIntermediate
+                |> List.indexedMap noteToIntermediate
 
         durationsToAbsolutes :
             TypedTime
-            -> { duration : TypedTime, action : IntermediateAction, dynamic : Dynamic, measureNumber : Int }
+            ->
+                { duration : TypedTime
+                , action : IntermediateAction
+                , dynamic : Dynamic
+                , measureNumber : Int
+                , numberInMeasure : Int
+                }
             -> ( TypedTime, IntermediateRepr )
-        durationsToAbsolutes lastEndTime { duration, action, dynamic, measureNumber } =
+        durationsToAbsolutes lastEndTime { duration, action, dynamic, measureNumber, numberInMeasure } =
             ( lastEndTime |> TypedTime.add duration
             , { startTimeMs = lastEndTime
               , action = action
               , dynamic = dynamic
               , measureNumber = measureNumber
+              , numberInMeasure = numberInMeasure
               }
             )
 
@@ -704,6 +741,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 , action = NoChange
                                 , dynamic = Pianississimo
                                 , measureNumber = 0
+                                , numberInMeasure = 0
                                 }
                                 last
                     in
@@ -734,37 +772,76 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                     -> Result String FlowIO.FlowIOCommand
                 mergePortInstructions p1 p2 p3 p4 p5 =
                     let
-                        settleAction : IntermediateAction -> List IntermediateAction -> Result String IntermediateAction
-                        settleAction a1 restActions =
-                            List.foldl
-                                (\action acc ->
-                                    case ( action, acc ) of
-                                        ( _, Err e ) ->
-                                            Err e
+                        settleAction : List IntermediateRepr -> Result String IntermediateAction
+                        settleAction actions =
+                            let
+                                releaseActions =
+                                    List.filter (.action >> (==) Release) actions
+                                        |> List.indexedMap Tuple.pair
 
-                                        ( NoChange, Ok a ) ->
-                                            Ok a
+                                inflateActions =
+                                    List.filter (.action >> (==) Inflate) actions
+                                        |> List.indexedMap Tuple.pair
 
-                                        ( a, Ok NoChange ) ->
-                                            Ok a
+                                vibrateActions =
+                                    List.filter (.action >> (==) Vibrate) actions
+                                        |> List.indexedMap Tuple.pair
 
-                                        ( Inflate, Ok Inflate ) ->
-                                            Ok Inflate
-
-                                        ( Release, Ok Release ) ->
-                                            Ok Release
-
-                                        _ ->
-                                            Err
-                                                ("Problem in "
+                                errorCtx =
+                                    List.head actions
+                                        |> (\repr ->
+                                                "Problem in "
                                                     ++ roleName
                                                     ++ ", measure "
-                                                    ++ String.fromInt p1.measureNumber
-                                                    ++ ": conflicting actions"
-                                                )
-                                )
-                                (Ok a1)
-                                restActions
+                                                    ++ (repr
+                                                            |> Maybe.map (.measureNumber >> String.fromInt)
+                                                            |> Maybe.withDefault "unknown"
+                                                       )
+                                           )
+
+                                noteErrorString ( i, repr ) =
+                                    "(P" ++ String.fromInt i ++ ", note " ++ String.fromInt repr.numberInMeasure ++ ")"
+
+                                conflictingError list =
+                                    list
+                                        |> List.map noteErrorString
+                                        |> String.join ", "
+                            in
+                            case ( List.isEmpty releaseActions, List.isEmpty inflateActions, List.isEmpty vibrateActions ) of
+                                ( True, True, True ) ->
+                                    Ok NoChange
+
+                                ( False, False, _ ) ->
+                                    Err
+                                        (errorCtx
+                                            ++ " conflicting actions: Release ["
+                                            ++ conflictingError releaseActions
+                                            ++ "] and Inflate ["
+                                            ++ conflictingError inflateActions
+                                            ++ "]"
+                                        )
+
+                                ( False, _, False ) ->
+                                    Err
+                                        (errorCtx
+                                            ++ " conflicting actions: Release ["
+                                            ++ conflictingError releaseActions
+                                            ++ "] and Vibrate ["
+                                            ++ conflictingError vibrateActions
+                                            ++ "]"
+                                        )
+
+                                ( True, False, True ) ->
+                                    Ok Inflate
+
+                                ( True, True, False ) ->
+                                    Ok Vibrate
+
+                                ( True, False, False ) ->
+                                    Ok Inflate
+
+                                ( False, True, True ) ->
+                                    Ok Release
 
                         toFlowIOAction : IntermediateAction -> FlowIO.FlowIOAction
                         toFlowIOAction action =
@@ -819,7 +896,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 }
                             }
                         )
-                        (settleAction p1.action [ p2.action, p3.action, p4.action, p5.action ])
+                        (settleAction [ p1, p2, p3, p4, p5 ])
             in
             if List.isEmpty intermediatesList || List.length intermediatesList > 5 then
                 Err "Can only map up to five parts to a single role"

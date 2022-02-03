@@ -141,9 +141,9 @@ convertHapticScoreSuite =
                                 Dict.fromList
                                     [ ( "role-1"
                                       , Array.fromList
-                                            [ { commandStop | pumpPwm = defaultDynamics.mezzopiano }
+                                            [ { commandStop | pumpPwm = 0 }
                                             , { action = FlowIO.Inflate
-                                              , pumpPwm = 255
+                                              , pumpPwm = defaultDynamics.fortississimo
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
@@ -193,7 +193,7 @@ convertHapticScoreSuite =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
                                             , { action = FlowIO.Release
-                                              , pumpPwm = defaultDynamics.mezzoforte
+                                              , pumpPwm = 0
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
@@ -250,12 +250,12 @@ convertHapticScoreSuite =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
                                             , { action = FlowIO.Stop
-                                              , pumpPwm = defaultDynamics.fortissimo
+                                              , pumpPwm = 0
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortClosed }
                                               }
                                             , { action = FlowIO.Release
-                                              , pumpPwm = defaultDynamics.mezzoforte
+                                              , pumpPwm = 0
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
@@ -358,7 +358,7 @@ convertHapticScoreSuite =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen, port2 = FlowIO.PortOpen }
                                               }
                                             , { action = FlowIO.Release
-                                              , pumpPwm = defaultDynamics.mezzoforte
+                                              , pumpPwm = 0
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen, port2 = FlowIO.PortOpen }
                                               }
@@ -528,12 +528,12 @@ convertHapticScoreSuite =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
                                             , { action = FlowIO.Release
-                                              , pumpPwm = defaultDynamics.forte
+                                              , pumpPwm = 0
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
                                             , { action = FlowIO.Release
-                                              , pumpPwm = defaultDynamics.forte
+                                              , pumpPwm = 0
                                               , ports =
                                                     { portsAllClosed | port2 = FlowIO.PortOpen }
                                               }
