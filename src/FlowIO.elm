@@ -291,6 +291,7 @@ type Configuration
     | InflationParallel
     | VacuumSeries
     | VacuumParallel
+    | RegulatedPressure
 
 
 
@@ -589,6 +590,9 @@ configurationEncoding configuration =
         VacuumParallel ->
             "VACUUM_PARALLEL"
 
+        RegulatedPressure ->
+            "REGULATED_PRESSURE"
+
 
 configurationDecoding : String -> Maybe Configuration
 configurationDecoding int =
@@ -607,6 +611,9 @@ configurationDecoding int =
 
         "VACUUM_PARALLEL" ->
             Just VacuumParallel
+
+        "REGULATED_PRESSURE" ->
+            Just RegulatedPressure
 
         _ ->
             Nothing
@@ -629,6 +636,9 @@ configurationToString configuration =
 
         VacuumParallel ->
             "Vacuum Parallel"
+
+        RegulatedPressure ->
+            "Regulated Pressure"
 
 
 

@@ -35,6 +35,10 @@ darkGrey =
     rgb 0.2 0.2 0.2
 
 
+elementColorToColor : Element.Color -> Color.Color
+elementColorToColor elColor =
+    Color.fromRgba (Element.toRgb elColor)
+
 colorToCssString : Element.Color -> String
 colorToCssString color =
     color
@@ -234,6 +238,7 @@ palette =
     , onBackground = Dracula.white
     , onPrimary = Dracula.black
     , secondary = Dracula.green
+    , accent = Dracula.blue
     , error = Dracula.red
     , onError = Dracula.white
     }

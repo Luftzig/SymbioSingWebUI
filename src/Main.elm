@@ -4,6 +4,7 @@ import Array exposing (Array)
 import Array.Extra
 import Browser
 import Browser.Events
+import Color
 import Color.Dracula as Dracula
 import Composer.Converter as Converter
 import Composer.Sequencer as Sequencer exposing (IncomingMsg(..), OutgoingMsg(..))
@@ -17,14 +18,14 @@ import Element.Region as UIRegion
 import Extra.RemoteService as RemoteService
 import FlowIO exposing (..)
 import Html
-import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
+import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configRegulatedPressureIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
 import LocalStorage
 import Scheduler exposing (IncomingMsg(..))
 import Sensors
 import Set exposing (Set)
-import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, vacuumButton)
+import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, elementColorToColor, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, vacuumButton)
 import Task
 import Time
 
@@ -844,25 +845,26 @@ displayDeviceList model =
 
                                     color =
                                         if serviceShown then
-                                            Dracula.green
+                                            Styles.palette.onBackground
 
                                         else
-                                            Dracula.white
+                                            Styles.palette.onPrimary
 
                                     backgroundColor =
                                         if serviceShown then
-                                            Dracula.white
+                                            Styles.palette.accent
 
                                         else
-                                            Dracula.gray
+                                            Styles.palette.primary
                                 in
                                 UIInput.button
-                                    [ Styles.fontSize.small
-                                    , UIFont.color color
-                                    , UIBackground.color backgroundColor
-                                    , UIBorder.rounded 4
-                                    , El.padding 4
-                                    ]
+                                    (Styles.button
+                                        ++ [ Styles.fontSize.small
+                                           , UIFont.color color
+                                           , UIBackground.color backgroundColor
+                                           , El.padding 4
+                                           ]
+                                    )
                                     { onPress =
                                         Just <|
                                             if serviceShown then
@@ -983,54 +985,76 @@ displayServices { devices, servicesPanel } =
                                 ++ (Maybe.map .name device.details |> Maybe.withDefault "")
                             )
                         , displayStatusDetailsDetails index hardwareStatus
-                        , displayControls index hardwareStatus.command
+                        , displayControls index device.configuration hardwareStatus.command
                         ]
 
                 _ ->
                     El.none
 
-        displayControls : Int -> FlowIOCommand -> El.Element Msg
-        displayControls deviceIndex command =
+        displayControls : Int -> Maybe Configuration -> FlowIOCommand -> El.Element Msg
+        displayControls deviceIndex configuration command =
+            let
+                pwmControl =
+                    if configuration == Just RegulatedPressure then
+                        [ UIInput.radioRow
+                            [ Styles.fontSize.small
+                            , El.spacing 10
+                            ]
+                            { options =
+                                [ UIInput.option 0 <| El.text "0"
+                                , UIInput.option 0x01 <| El.text "3"
+                                , UIInput.option 0x02 <| El.text "4"
+                                , UIInput.option 0x04 <| El.text "5"
+                                , UIInput.option 0x08 <| El.text "6"
+                                ]
+                            , onChange = ChangeCommandPwm deviceIndex
+                            , selected = Just command.pumpPwm
+                            , label =
+                                UIInput.labelAbove [ Styles.fontSize.small ] <|
+                                    El.text "Regulator setting (Bars)"
+                            }
+                        ]
+
+                    else
+                        [ pwmSlider (ChangeCommandPwm deviceIndex) command.pumpPwm
+                        , UIInput.text
+                            [ El.width <| El.maximum 50 <| El.fillPortion 1
+                            , El.alignRight
+                            , Styles.fontSize.small
+                            , El.padding 4
+                            , UIBackground.color palette.background
+                            , UIFont.color palette.onBackground
+                            , El.alignBottom
+                            ]
+                            { onChange = ChangeCommandPwm deviceIndex << Maybe.withDefault command.pumpPwm << String.toInt
+                            , label = UIInput.labelHidden "PWM Value"
+                            , placeholder = Nothing
+                            , text = String.fromInt command.pumpPwm
+                            }
+                        ]
+            in
             El.wrappedRow [ El.width El.fill ]
-                [ pwmSlider (ChangeCommandPwm deviceIndex) command.pumpPwm
-                , actions (ActionClicked deviceIndex) command.action
-                , displayPorts (ChangeCommandPortState deviceIndex) command.ports
-                ]
+                (pwmControl
+                    ++ [ actions (ActionClicked deviceIndex) command.action
+                       , displayPorts (ChangeCommandPortState deviceIndex) command.ports
+                       ]
+                )
 
         pwmSlider : (Int -> Msg) -> Int -> El.Element Msg
         pwmSlider onUpdate currentValue =
             let
-                fullWidth =
-                    160
+                sliderWidth =
+                    El.minimum 160 <| El.fillPortion 3
 
                 filled =
-                    toFloat currentValue / 255
+                    toFloat currentValue
             in
             UIInput.slider
-                [ El.width <| El.px fullWidth
-                , El.height <| El.px 12
-                , El.behindContent <|
-                    El.el
-                        [ El.width El.fill
-                        , El.height <| El.px 8
-                        , El.padding 2
-                        , El.centerX
-                        , El.centerY
-                        , UIBackground.color grey
-                        , UIBorder.rounded 4
-                        ]
-                        El.none
-                , El.behindContent <|
-                    El.el
-                        [ El.width <| El.px <| round <| (fullWidth - 4) * filled
-                        , El.height <| El.px 4
-                        , El.spacing 2
-                        , El.alignLeft
-                        , El.centerY
-                        , UIBackground.color rust
-                        , UIBorder.rounded 2
-                        ]
-                        El.none
+                [ El.width sliderWidth
+                , UIBackground.color Styles.palette.primary
+                , UIBorder.rounded 10
+                , UIBorder.color Styles.palette.onBackground
+                , UIBorder.width 1
                 ]
                 { label = UIInput.labelAbove [ Styles.fontSize.small, UIFont.center ] <| El.text "PWM"
                 , onChange = round >> onUpdate
@@ -1140,14 +1164,14 @@ displayServices { devices, servicesPanel } =
         displayConfigService : Int -> FlowIODevice -> El.Element Msg
         displayConfigService index device =
             let
-                configIcon : (String -> Html.Html msg) -> UIInput.OptionState -> El.Element msg
+                configIcon : (El.Color -> Html.Html msg) -> UIInput.OptionState -> El.Element msg
                 configIcon baseIcon state =
                     let
                         greenString =
-                            Dracula.green |> colorToCssString
+                            Dracula.green
 
                         whiteString =
-                            Dracula.white |> colorToCssString
+                            Dracula.white
 
                         attributes =
                             [ El.width <| El.px 32
@@ -1177,6 +1201,7 @@ displayServices { devices, servicesPanel } =
                     , UIInput.optionWith InflationParallel (configIcon configInflateParallelIcon)
                     , UIInput.optionWith VacuumSeries (configIcon configVacuumSeriesIcon)
                     , UIInput.optionWith VacuumParallel (configIcon configVacuumParallelIcon)
+                    , UIInput.optionWith RegulatedPressure (configIcon configRegulatedPressureIcon)
                     ]
                 }
 

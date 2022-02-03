@@ -1,12 +1,13 @@
 module Images exposing (..)
 
 import Color exposing (Color)
-import Color.Dracula as Dracule
+import Color.Convert
+import Color.Dracula as Dracula
 import Element exposing (Element)
 import FlowIO
 import Html
 import Material.Icons
-import Material.Icons.Types exposing (Coloring(..))
+import Material.Icons.Types as Material exposing (Coloring(..))
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
 
@@ -145,6 +146,9 @@ tubes configuration =
         FlowIO.VacuumParallel ->
             [ tubeOutlet, tubeParallelVac ]
 
+        FlowIO.RegulatedPressure ->
+            [ tubeInlet, tubeSeries ]
+
 
 deviceBox : FlowIO.ControlServiceStatus -> FlowIO.Configuration -> Svg msg
 deviceBox { pump1, pump2, inlet, outlet, port1, port2, port3, port4, port5 } config =
@@ -206,35 +210,61 @@ deviceBox { pump1, pump2, inlet, outlet, port1, port2, port3, port4, port5 } con
 {- Configuration Icons -}
 
 
+configGeneralIcon : Element.Color -> Html.Html msg
 configGeneralIcon color =
+    let
+        color_ =
+            Color.toCssString <| elementColorToColor color
+    in
     svg
-        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ fill color_, stroke color_, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
         [ Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], Svg.path [ d "M464 299l-68 82M470 299l68 81M467 307v356M256 663l67-82M249 664l-67-81M252 655V240" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
 
 
+configInflateSeriesIcon : Element.Color -> Html.Html msg
 configInflateSeriesIcon color =
+    let
+        color_ =
+            Color.toCssString <| elementColorToColor color
+    in
     svg
-        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ fill color_, stroke color_, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
         [ Svg.path [ d "M252 664V484" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], Svg.path [ d "M464 299l-68 82M470 299l68 81M467 307v153M453 479H282" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
 
 
+configInflateParallelIcon : Element.Color -> Html.Html msg
 configInflateParallelIcon color =
+    let
+        color_ =
+            Color.toCssString <| elementColorToColor color
+    in
     svg
-        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ fill color_, stroke color_, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
         [ Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], Svg.path [ d "M464 299l-68 82M470 299l68 81M467 307v356M248 299l-67 82M255 299l67 81M252 307v356" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
 
 
+configVacuumSeriesIcon : Element.Color -> Html.Html msg
 configVacuumSeriesIcon color =
+    let
+        color_ =
+            Color.toCssString <| elementColorToColor color
+    in
     svg
-        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ fill color_, stroke color_, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
         [ Svg.path [ d "M252 480V249M470 663l68-82M464 664l-68-81M467 655V491M263 483h142" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], circle [ transform "translate(415 429)", r "52.9", cx "52.9", cy "52.9" ] [] ]
 
 
 configVacuumParallelIcon color =
+    let
+        color_ =
+            Color.toCssString <| elementColorToColor color
+    in
     svg
-        [ fill color, stroke color, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
+        [ fill color_, stroke color_, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36" ]
         [ Svg.path [ d "M256 662l68-82M250 663l-68-81M253 654V240" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], Svg.path [ d "M471 664l68-81M465 665l-68-81M468 657V255" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], circle [ transform "translate(415 429)", cx "52.9", cy "52.9", r "52.9" ] [] ]
 
+configRegulatedPressureIcon color =
+    Material.Icons.fire_extinguisher 32 (Material.Color <| elementColorToColor color)
 
 bodyImage : Maybe { sensor1 : { fill : String, width : Float } } -> Html.Html msg
 bodyImage data =
