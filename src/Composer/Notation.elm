@@ -781,32 +781,33 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 Vibrate ->
                                     FlowIO.Inflate
 
-                        settleDynamic : Dynamic -> List ( IntermediateAction, Dynamic ) -> Result String Int
-                        settleDynamic initDynamic dyns =
+                        settleDynamic : List ( IntermediateAction, Dynamic ) -> Int
+                        settleDynamic dyns =
                             let
-                                decideDynamic : ( IntermediateAction, Dynamic ) -> Result String Dynamic -> Result String Dynamic
-                                decideDynamic =
-                                    \( currentAction, currentDynamic ) acc ->
-                                        acc
-                                            |> Result.andThen
-                                                (\accDynamic ->
-                                                    case currentAction of
-                                                        NoChange ->
-                                                            Ok accDynamic
+                                actuationOnly =
+                                    dyns |> List.filter (\( action, _ ) -> action == Inflate || action == Vibrate)
 
-                                                        _ ->
-                                                            max (dynamicToInt accDynamic) (dynamicToInt currentDynamic)
-                                                                |> intToDynamic
-                                                )
+                                maxDynamic =
+                                    actuationOnly
+                                        |> List.map Tuple.second
+                                        |> List.map dynamicToPwm
+                                        |> List.maximum
                             in
-                            List.foldl
-                                decideDynamic
-                                (Ok initDynamic)
-                                dyns
-                                |> Result.map dynamicToPwm
+                            maxDynamic
+                                |> Maybe.withDefault 0
                     in
-                    Result.map2
-                        (\settledDynamic settledAction ->
+                    Result.map
+                        (\settledAction ->
+                            let
+                                settledDynamic =
+                                    settleDynamic
+                                        [ ( p1.action, p1.dynamic )
+                                        , ( p2.action, p2.dynamic )
+                                        , ( p3.action, p3.dynamic )
+                                        , ( p4.action, p4.dynamic )
+                                        , ( p5.action, p5.dynamic )
+                                        ]
+                            in
                             { action = toFlowIOAction settledAction
                             , pumpPwm = settledDynamic
                             , ports =
@@ -817,13 +818,6 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 , port5 = FlowIO.portFromBool (settledAction /= NoChange && p5.action == settledAction)
                                 }
                             }
-                        )
-                        (settleDynamic p1.dynamic
-                            [ ( p2.action, p2.dynamic )
-                            , ( p3.action, p3.dynamic )
-                            , ( p4.action, p4.dynamic )
-                            , ( p5.action, p5.dynamic )
-                            ]
                         )
                         (settleAction p1.action [ p2.action, p3.action, p4.action, p5.action ])
             in
