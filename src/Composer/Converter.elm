@@ -4,12 +4,12 @@ import Color.Dracula as Dracula
 import Composer.Notation as Notation exposing (ConversionParameters, Dynamic(..), Dynamics, HapticScore, PartID, parseMusicXml)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignRight, below, column, el, fill, fillPortion, padding, paddingEach, paddingXY, paragraph, px, row, shrink, spacing, table, text, width)
+import Element exposing (Element, alignRight, below, column, el, fillPortion, minimum, padding, paddingEach, paddingXY, paragraph, row, shrink, spacing, table, text, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events exposing (onFocus, onLoseFocus)
 import Element.Font as Font
-import Element.Input as Input exposing (button, labelLeft, radioRow)
+import Element.Input as Input exposing (button, labelHidden, labelLeft, radioRow)
 import Extra.Resource as Resource exposing (Resource(..))
 import File exposing (File)
 import File.Download
@@ -23,7 +23,7 @@ import Regex exposing (Regex)
 import Result.Extra as Result
 import Scheduler exposing (encodeInstructions)
 import Set
-import Styles
+import Styles exposing (palette, tabStyle)
 import Task
 
 
@@ -33,10 +33,17 @@ type alias Model =
     , bpm : Int
     , roleMapping : Dict PartID { roleName : Maybe Scheduler.RoleName, port_ : Maybe FlowIO.Port }
     , dynamics : Dynamics
+    , regulatorSettings : Dynamics
+    , displayedDynamics : DynamicsSettings
     , showRolesSuggestions : Maybe PartID
     , schedule : Resource String Scheduler.Instructions
     , targetName : String
     }
+
+
+type DynamicsSettings
+    = PWMValues
+    | RegulatorValues
 
 
 init : Model
@@ -46,6 +53,8 @@ init =
     , bpm = 80
     , roleMapping = Dict.empty
     , dynamics = defaultDynamics
+    , regulatorSettings = defaultRegulatorSettings
+    , displayedDynamics = PWMValues
     , showRolesSuggestions = Nothing
     , schedule = NotLoaded
     , targetName = ""
@@ -64,6 +73,17 @@ defaultDynamics =
     }
 
 
+defaultRegulatorSettings =
+    { pianissimo = 1
+    , piano = 2
+    , mezzopiano = 3
+    , mezzoforte = 4
+    , forte = 5
+    , fortissimo = 6
+    , fortississimo = 7
+    }
+
+
 type Msg
     = SelectScoreFile
     | FileSelected File
@@ -78,8 +98,10 @@ type Msg
     | DownloadRequested Scheduler.Instructions
     | BpmChanged String
     | UpdateDynamic Dynamic Float
+    | UpdateRegulator Dynamic Float
     | NameChanged String
     | SaveSchedule String Scheduler.Instructions
+    | ChangeSettingsTo DynamicsSettings
 
 
 view : Model -> Element Msg
@@ -176,21 +198,31 @@ showConversionControls model =
             Element.none
 
 
-showDynamicsControls { dynamics } =
+showDynamicsControls { dynamics, regulatorSettings, displayedDynamics } =
     let
         dynamicsSlider msgType label getter =
             row [ spacing 5, Styles.fullWidth ]
-                [ el [ width <| fillPortion 1 ] <| text label
+                [ Input.text
+                    [ width <| minimum 32 <| fillPortion 1
+                    , Styles.fontSize.small
+                    , padding 5
+                    , Background.color palette.background
+                    , Font.color palette.onBackground
+                    ]
+                    { label = Input.labelLeft [ width <| minimum 18 <| fillPortion 1 ] <| text label
+                    , text = String.fromInt <| getter dynamics
+                    , onChange = UpdateDynamic msgType << Maybe.withDefault 0 << String.toFloat
+                    , placeholder = Nothing
+                    }
                 , Input.slider
-                    [ width <| px 263
+                    [ width <| minimum 100 <| fillPortion 8
                     , Background.color Styles.palette.primary
                     , Border.rounded 10
                     , Border.color Styles.palette.onBackground
                     , Border.width 1
-                    , width <| fillPortion 10
                     ]
                     { onChange = UpdateDynamic msgType
-                    , label = labelLeft [ alignRight, width <| fillPortion 1 ] <| text <| String.fromInt (getter dynamics)
+                    , label = labelHidden label
                     , value = toFloat <| getter dynamics
                     , thumb = Input.defaultThumb
                     , step = Just 1.0
@@ -198,18 +230,59 @@ showDynamicsControls { dynamics } =
                     , max = 255
                     }
                 ]
+
+        dynamicsNumerical msgType label getter =
+            Input.text
+                [ width <| minimum 32 <| fillPortion 3
+                , Styles.fontSize.small
+                , padding 5
+                , Background.color palette.background
+                , Font.color palette.onBackground
+                ]
+                { label = Input.labelLeft [ width <| minimum 18 <| fillPortion 1 ] <| text label
+                , text = String.fromInt <| getter regulatorSettings
+                , onChange = UpdateDynamic msgType << Maybe.withDefault 0 << String.toFloat
+                , placeholder = Nothing
+                }
     in
     column [ spacing 10, width <| fillPortion 1 ]
-        [ el [ Styles.bottomBorder ] <| text "Dynamics"
-        , dynamicsSlider Pianissimo "pp" .pianissimo
-        , dynamicsSlider Piano "p" .piano
-        , dynamicsSlider Mezzopiano "mp" .mezzopiano
-        , dynamicsSlider Mezzoforte "mf" .mezzoforte
-        , dynamicsSlider Mezzoforte "mf" .mezzoforte
-        , dynamicsSlider Forte "f" .forte
-        , dynamicsSlider Fortissimo "ff" .fortissimo
-        , dynamicsSlider Fortississimo "fff" .fortississimo
-        ]
+        ([ row [ Styles.bottomBorder ]
+            [ el [ padding 10 ] <| text "Dynamics:"
+            , button (tabStyle (displayedDynamics == PWMValues))
+                { label =
+                    el [ padding 5 ] <|
+                        text "PWM"
+                , onPress = Just <| ChangeSettingsTo PWMValues
+                }
+            , button (tabStyle (displayedDynamics == RegulatorValues))
+                { label =
+                    el [ padding 5 ] <|
+                        text "Regulator"
+                , onPress = Just <| ChangeSettingsTo RegulatorValues
+                }
+            ]
+         ]
+            ++ (if displayedDynamics == PWMValues then
+                    [ dynamicsSlider Pianissimo "pp" .pianissimo
+                    , dynamicsSlider Piano "p" .piano
+                    , dynamicsSlider Mezzopiano "mp" .mezzopiano
+                    , dynamicsSlider Mezzoforte "mf" .mezzoforte
+                    , dynamicsSlider Forte "f" .forte
+                    , dynamicsSlider Fortissimo "ff" .fortissimo
+                    , dynamicsSlider Fortississimo "fff" .fortississimo
+                    ]
+
+                else
+                    [ dynamicsNumerical Pianissimo "pp" .pianissimo
+                    , dynamicsNumerical Piano "p" .piano
+                    , dynamicsNumerical Mezzopiano "mp" .mezzopiano
+                    , dynamicsNumerical Mezzoforte "mf" .mezzoforte
+                    , dynamicsNumerical Forte "f" .forte
+                    , dynamicsNumerical Fortissimo "ff" .fortissimo
+                    , dynamicsNumerical Fortississimo "fff" .fortississimo
+                    ]
+               )
+        )
 
 
 showRoleMapping : Model -> Dict Notation.PartID String -> Element Msg
@@ -399,6 +472,32 @@ update msg model =
                             Just { port_ = Nothing, roleName = Just name }
                 )
                 model.roleMapping
+
+        setDynamic dynamics dynamic value =
+            case dynamic of
+                Pianississimo ->
+                    dynamics
+
+                Pianissimo ->
+                    { dynamics | pianissimo = round value }
+
+                Piano ->
+                    { dynamics | piano = round value }
+
+                Mezzopiano ->
+                    { dynamics | mezzopiano = round value }
+
+                Mezzoforte ->
+                    { dynamics | mezzoforte = round value }
+
+                Forte ->
+                    { dynamics | forte = round value }
+
+                Fortissimo ->
+                    { dynamics | fortissimo = round value }
+
+                Fortississimo ->
+                    { dynamics | fortississimo = round value }
     in
     case msg of
         SelectScoreFile ->
@@ -491,7 +590,13 @@ update msg model =
                 params : ConversionParameters
                 params =
                     { bpm = model.bpm
-                    , dynamics = model.dynamics
+                    , dynamics =
+                        case model.displayedDynamics of
+                            PWMValues ->
+                                model.dynamics
+
+                            RegulatorValues ->
+                                model.regulatorSettings
                     , roleMapping =
                         model.roleMapping
                             |> Dict.filterMap (\_ { roleName, port_ } -> Maybe.map2 Tuple.pair roleName port_)
@@ -526,36 +631,18 @@ update msg model =
                     model.dynamics
 
                 newDynamics =
-                    case dynamic of
-                        Pianississimo ->
-                            dynamics
-
-                        Pianissimo ->
-                            { dynamics | pianissimo = round value }
-
-                        Piano ->
-                            { dynamics | piano = round value }
-
-                        Mezzopiano ->
-                            { dynamics | mezzopiano = round value }
-
-                        Mezzoforte ->
-                            { dynamics | mezzoforte = round value }
-
-                        Forte ->
-                            { dynamics | forte = round value }
-
-                        Fortissimo ->
-                            { dynamics | fortissimo = round value }
-
-                        Fortississimo ->
-                            { dynamics | fortississimo = round value }
+                    setDynamic dynamics dynamic value
             in
             ( { model | dynamics = newDynamics }, Cmd.none )
+
+        UpdateRegulator dynamic value ->
+            ( { model | dynamics = setDynamic model.regulatorSettings dynamic value }, Cmd.none )
 
         NameChanged newName ->
             ( { model | targetName = newName }, Cmd.none )
 
         SaveSchedule key instructions ->
-            (model, LocalStorage.save key (encodeInstructions instructions))
+            ( model, LocalStorage.save key (encodeInstructions instructions) )
 
+        ChangeSettingsTo newSettings ->
+            ( { model | displayedDynamics = newSettings }, Cmd.none )

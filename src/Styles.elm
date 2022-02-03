@@ -39,6 +39,7 @@ elementColorToColor : Element.Color -> Color.Color
 elementColorToColor elColor =
     Color.fromRgba (Element.toRgb elColor)
 
+
 colorToCssString : Element.Color -> String
 colorToCssString color =
     color
@@ -110,7 +111,7 @@ button =
     ]
 
 
-buttonPrimary: List (Attribute msg)
+buttonPrimary : List (Attribute msg)
 buttonPrimary =
     [ buttonPadding
     , Font.color Dracula.white
@@ -121,7 +122,6 @@ buttonPrimary =
     , Border.rounded 4
     , mouseOver [ Border.innerGlow Dracula.white 2 ]
     ]
-
 
 
 textFieldStyle =
@@ -189,6 +189,20 @@ clickAndHoldButton onMouseDown onMouseUp label description =
         , Element.Events.onMouseUp onMouseUp
         ]
         { label = label, onPress = Nothing }
+
+
+tabStyle selected =
+    [ Border.roundEach { bottomRight = 0, topRight = 4, bottomLeft = 0, topLeft = 4 }
+    , Border.widthEach { bottom = 0, left = 2, right = 2, top = 2 }
+    , paddingXY 8 6
+    , Border.color palette.onBackground
+    ]
+        ++ (if selected then
+                [ Background.color palette.primary, Font.color palette.onPrimary ]
+
+            else
+                [ Background.color palette.background, Font.color palette.onBackground ]
+           )
 
 
 inflateIcon =
@@ -366,6 +380,7 @@ colorsPrimary =
     , Font.color palette.onPrimary
     ]
 
+
 card : List (Attribute msg)
 card =
     [ Border.rounded 4
@@ -386,10 +401,12 @@ clickOutside onClickOutside attrs content =
             (attrs ++ [ Html.Events.on "click-outside" (Json.Decode.succeed onClickOutside) ])
             [ Element.layout [] content ]
 
+
 fontSize =
     { tiny = Font.size 8
     , smaller = Font.size 10
     , small = Font.size 12
     , standard = Font.size 14
     , large = Font.size 18
-    , huge = Font.size 24}
+    , huge = Font.size 24
+    }

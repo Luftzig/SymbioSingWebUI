@@ -25,7 +25,7 @@ import LocalStorage
 import Scheduler exposing (IncomingMsg(..))
 import Sensors
 import Set exposing (Set)
-import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, elementColorToColor, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, vacuumButton)
+import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, elementColorToColor, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, tabStyle, vacuumButton)
 import Task
 import Time
 
@@ -754,18 +754,6 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel, 
                 , width = toFloat windowSize.width * (8 / 12) - 80 |> round
                 }
 
-        tabStyle selected =
-            [ UIBorder.roundEach { bottomRight = 0, topRight = 4, bottomLeft = 0, topLeft = 4 }
-            , UIBorder.widthEach { bottom = 0, left = 2, right = 2, top = 2 }
-            , El.paddingXY 8 6
-            , UIBorder.color palette.onBackground
-            ]
-                ++ (if selected then
-                        [ UIBackground.color palette.primary, UIFont.color palette.onPrimary ]
-
-                    else
-                        [ UIBackground.color palette.background, UIFont.color palette.onBackground ]
-                   )
     in
     El.column [ El.spacing 4, tabSize.width |> El.px |> El.width, El.alignTop, tabSize.height |> El.px |> El.height ]
         [ El.row [ bottomBorder, El.paddingXY 12 0, El.alignLeft, fullWidth ]
