@@ -76,11 +76,11 @@ defaultDynamics =
 defaultRegulatorSettings =
     { pianissimo = 1
     , piano = 2
-    , mezzopiano = 3
+    , mezzopiano = 2
     , mezzoforte = 4
     , forte = 5
-    , fortissimo = 6
-    , fortississimo = 7
+    , fortissimo = 5
+    , fortississimo = 6
     }
 
 

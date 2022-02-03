@@ -989,10 +989,11 @@ displayServices { devices, servicesPanel } =
                             ]
                             { options =
                                 [ UIInput.option 0 <| El.text "0"
-                                , UIInput.option 0x01 <| El.text "3"
-                                , UIInput.option 0x02 <| El.text "4"
-                                , UIInput.option 0x04 <| El.text "5"
-                                , UIInput.option 0x08 <| El.text "6"
+                                , UIInput.option 0x01 <| El.text "5"
+                                , UIInput.option 0x02 <| El.text "6"
+                                , UIInput.option 0x04 <| El.text "7"
+                                , UIInput.option 0x05 <| El.text "8"
+                                , UIInput.option 0x06 <| El.text "9"
                                 ]
                             , onChange = ChangeCommandPwm deviceIndex
                             , selected = Just command.pumpPwm
