@@ -479,6 +479,7 @@ type alias ConversionParameters =
     { bpm : Int
     , roleMapping : Dict String ( Scheduler.RoleName, FlowIO.Port )
     , dynamics : Dynamics
+    , trillInterval : TypedTime
     }
 
 
@@ -498,7 +499,7 @@ type alias IntermediateRepr =
 
 
 scoreToSchedule : ConversionParameters -> HapticScore -> Result String Scheduler.Instructions
-scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
+scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
     let
         dynamicToPwm : Dynamic -> Int
         dynamicToPwm dynamic =
@@ -558,7 +559,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                     , measureNumber : Int
                     , numberInMeasure : Int
                     }
-        measureToIntermediate partName { divisionsPerQuarter, notes, number } =
+        measureToIntermediate _ { divisionsPerQuarter, notes, number } =
             let
                 durationPerDivision =
                     let
@@ -613,7 +614,13 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                             ]
 
                         Trill dynamic t ->
-                            List.range 0 (t - 1)
+                            let
+                                trills =
+                                    toDuration t
+                                    |> TypedTime.divideByInterval trillInterval
+                            in
+
+                            List.range 0 (floor trills - 1)
                                 |> List.map
                                     (\i ->
                                         if (i |> modBy 2) == 0 then
@@ -624,7 +631,7 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                     )
                                 |> List.map
                                     (\action ->
-                                        { duration = durationPerDivision
+                                        { duration = trillInterval
                                         , action = action
                                         , dynamic = dynamic
                                         , measureNumber = number

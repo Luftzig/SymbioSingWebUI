@@ -11,6 +11,8 @@ typedTimeTests =
     describe "operators"
         [ test "divide" <|
             \_ -> Expect.equal (TypedTime.divide 0.5 (TypedTime.minutes 1)) (TypedTime.seconds 120)
+        , test "divideByInterval" <|
+            \_ -> (TypedTime.minutes 1 |> TypedTime.divideByInterval (TypedTime.seconds 30)) |> Expect.equal 2
         , fuzz Fuzz.float "toHours" <|
             \x ->
                 TypedTime.milliseconds (x * 60 * 60 * 1000)
@@ -23,14 +25,14 @@ typedTimeTests =
                         |> TypedTime.toFormattedString TypedTime.HoursMinutesSecondsHundredths
                         |> Expect.equal "00:00:03.20"
             , test "HHMMSSss minutes" <|
-                              \() ->
-                                  TypedTime.seconds 73.2
-                                      |> TypedTime.toFormattedString TypedTime.HoursMinutesSecondsHundredths
-                                      |> Expect.equal "00:01:13.20"
+                \() ->
+                    TypedTime.seconds 73.2
+                        |> TypedTime.toFormattedString TypedTime.HoursMinutesSecondsHundredths
+                        |> Expect.equal "00:01:13.20"
             , test "HHMMSSss hours" <|
-                              \() ->
-                                  TypedTime.minutes 61.25
-                                      |> TypedTime.toFormattedString TypedTime.HoursMinutesSecondsHundredths
-                                      |> Expect.equal "01:01:15.00"
+                \() ->
+                    TypedTime.minutes 61.25
+                        |> TypedTime.toFormattedString TypedTime.HoursMinutesSecondsHundredths
+                        |> Expect.equal "01:01:15.00"
             ]
         ]

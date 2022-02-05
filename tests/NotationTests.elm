@@ -72,6 +72,7 @@ convertHapticScoreSuite =
                         { bpm = 100
                         , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok emptyInstructions)
@@ -111,6 +112,7 @@ convertHapticScoreSuite =
                         { bpm = 60
                         , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
@@ -157,6 +159,7 @@ convertHapticScoreSuite =
                         { bpm = 120
                         , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
@@ -207,6 +210,7 @@ convertHapticScoreSuite =
                         { bpm = 120
                         , roleMapping = Dict.fromList [ ( "P2", ( "role-2", FlowIO.Port1 ) ) ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
@@ -269,6 +273,7 @@ convertHapticScoreSuite =
                         { bpm = 120
                         , roleMapping = Dict.fromList [ ( "P2", ( "role-2", FlowIO.Port1 ) ) ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
@@ -345,6 +350,80 @@ convertHapticScoreSuite =
                         { bpm = 120
                         , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
+                        }
+                        score
+                        |> Expect.equal (Ok expected)
+            , test "trill - high interval" <|
+                \_ ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "test"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes = [ Trill Mezzoforte (baseMeasure.divisionsPerQuarter * 1) ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        completeMeasureTime =
+                            TypedTime.milliseconds 500
+
+                        inflateInstructions =
+                            { action = FlowIO.Inflate
+                            , pumpPwm = defaultDynamics.mezzoforte
+                            , ports =
+                                { portsAllClosed | port1 = FlowIO.PortOpen }
+                            }
+
+                        holdInstruction =
+                            { action = FlowIO.Stop
+                            , pumpPwm = 0
+                            , ports =
+                                { portsAllClosed | port1 = FlowIO.PortClosed }
+                            }
+
+                        divisionsInMeasure =
+                            baseMeasure.divisionsPerQuarter
+                                * baseMeasure.signature.beats
+
+                        expected : Scheduler.Instructions
+                        expected =
+                            { time =
+                                Array.fromList
+                                    (List.range 0 (500 // 25)
+                                        |> List.map (\i -> TypedTime.milliseconds (toFloat i * 25))
+                                    )
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            ((List.range 0 ((500 // 25) - 1)
+                                                |> List.map
+                                                    (\i ->
+                                                        if (i |> modBy 2) == 0 then
+                                                            inflateInstructions
+
+                                                        else
+                                                            holdInstruction
+                                                    )
+                                             )
+                                                ++ [ holdInstruction ]
+                                            )
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping = Dict.fromList [ ( "P1", ( "role-1", FlowIO.Port1 ) ) ]
+                        , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.milliseconds 25
                         }
                         score
                         |> Expect.equal (Ok expected)
@@ -386,6 +465,7 @@ convertHapticScoreSuite =
                                 , ( "P2", ( "role-1", FlowIO.Port2 ) )
                                 ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok emptyInstructions)
@@ -452,6 +532,7 @@ convertHapticScoreSuite =
                                 , ( "P2", ( "role-1", FlowIO.Port2 ) )
                                 ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
@@ -517,6 +598,7 @@ convertHapticScoreSuite =
                                 , ( "P2", ( "role-1", FlowIO.Port2 ) )
                                 ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
@@ -627,6 +709,7 @@ convertHapticScoreSuite =
                                 , ( "P2", ( "role-1", FlowIO.Port2 ) )
                                 ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.seconds 0.25
                         }
                         score
                         |> Expect.equal (Ok expectedInstructions)
@@ -661,13 +744,6 @@ convertHapticScoreSuite =
 
                         completeMeasureTime =
                             TypedTime.milliseconds 2000
-
-                        inflateInstructions =
-                            { action = FlowIO.Inflate
-                            , pumpPwm = defaultDynamics.mezzoforte
-                            , ports =
-                                { portsAllClosed | port1 = FlowIO.PortOpen }
-                            }
 
                         holdInstruction =
                             { action = FlowIO.Stop
@@ -751,6 +827,7 @@ convertHapticScoreSuite =
                             Dict.fromList
                                 [ ( "P1", ( "role-1", FlowIO.Port1 ) ), ( "P2", ( "role-1", FlowIO.Port2 ) ) ]
                         , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.milliseconds 250
                         }
                         score
                         |> Expect.equal (Ok expected)

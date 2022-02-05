@@ -4,13 +4,14 @@ import Color.Dracula as Dracula
 import Composer.Notation as Notation exposing (ConversionParameters, Dynamic(..), Dynamics, HapticScore, PartID, parseMusicXml)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignRight, below, column, el, fillPortion, minimum, padding, paddingEach, paddingXY, paragraph, row, shrink, spacing, table, text, width)
+import Element exposing (Element, alignBottom, alignRight, below, column, el, fillPortion, minimum, padding, paddingEach, paddingXY, paragraph, row, shrink, spacing, table, text, width, wrappedRow)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events exposing (onFocus, onLoseFocus)
 import Element.Font as Font
-import Element.Input as Input exposing (button, labelHidden, labelLeft, radioRow)
+import Element.Input as Input exposing (button, labelAbove, labelHidden, labelRight, radioRow)
 import Extra.Resource as Resource exposing (Resource(..))
+import Extra.TypedTime as TypedTime exposing (TypedTime)
 import File exposing (File)
 import File.Download
 import File.Select
@@ -35,6 +36,7 @@ type alias Model =
     , dynamics : Dynamics
     , regulatorSettings : Dynamics
     , displayedDynamics : DynamicsSettings
+    , trillInterval : TrillInterval
     , showRolesSuggestions : Maybe PartID
     , schedule : Resource String Scheduler.Instructions
     , targetName : String
@@ -46,6 +48,11 @@ type DynamicsSettings
     | RegulatorValues
 
 
+type TrillInterval
+    = Absolute TypedTime
+    | PerBeat Float
+
+
 init : Model
 init =
     { sourceFile = Nothing
@@ -55,6 +62,7 @@ init =
     , dynamics = defaultDynamics
     , regulatorSettings = defaultRegulatorSettings
     , displayedDynamics = PWMValues
+    , trillInterval = Absolute <| TypedTime.milliseconds 20
     , showRolesSuggestions = Nothing
     , schedule = NotLoaded
     , targetName = ""
@@ -102,6 +110,7 @@ type Msg
     | NameChanged String
     | SaveSchedule String Scheduler.Instructions
     | ChangeSettingsTo DynamicsSettings
+    | TrillIntervalChanged TrillInterval
 
 
 view : Model -> Element Msg
@@ -149,25 +158,79 @@ showConversionControls model =
                 idsToNames : Dict PartID String
                 idsToNames =
                     Dict.map (\_ -> .name) score
+
+                trillControl =
+                    column [ spacing 5, width <| minimum 200 <| fillPortion 3 ]
+                        [ el [ Font.underline ] <| text "Trill Interval"
+                        , row [ spacing 10 ]
+                            [ Input.text (Styles.textFieldStyle ++ [ width <| fillPortion 3 ])
+                                { label = labelRight [] <| text "ms"
+                                , onChange =
+                                    \t ->
+                                        t
+                                            |> String.toFloat
+                                            |> Maybe.withDefault 0
+                                            |> TypedTime.milliseconds
+                                            |> Absolute
+                                            |> TrillIntervalChanged
+                                , text =
+                                    case model.trillInterval of
+                                        Absolute t ->
+                                            TypedTime.toMilliseconds t
+                                                |> String.fromFloat
+
+                                        PerBeat f ->
+                                            TypedTime.minutes 1
+                                                |> TypedTime.divide (toFloat model.bpm)
+                                                |> TypedTime.divide f
+                                                |> TypedTime.toMilliseconds
+                                                |> String.fromFloat
+                                , placeholder = Nothing
+                                }
+                            , el [ Font.italic ] <| text "or"
+                            , Input.text (Styles.textFieldStyle ++ [ width <| fillPortion 4 ])
+                                { label = labelRight [] <| text "per beat"
+                                , onChange =
+                                    \t ->
+                                        t
+                                            |> String.toFloat
+                                            |> Maybe.withDefault 0
+                                            |> PerBeat
+                                            |> TrillIntervalChanged
+                                , text =
+                                    case model.trillInterval of
+                                        Absolute t ->
+                                            TypedTime.minutes 1
+                                                |> TypedTime.divide (toFloat model.bpm)
+                                                |> TypedTime.divideByInterval t
+                                                |> String.fromFloat
+
+                                        PerBeat f ->
+                                            f |> String.fromFloat
+                                , placeholder = Nothing
+                                }
+                            ]
+                        ]
             in
             row [ spacing 28, Styles.fullWidth ]
                 [ column [ spacing 10, width <| fillPortion 1 ]
                     [ showRoleMapping model idsToNames
                     , Styles.spacer
-                    , row [ spacing 10 ]
-                        [ Input.text (Styles.textFieldStyle ++ [ width <| fillPortion 1 ])
-                            { label = labelLeft [ width shrink ] <| text "BPM"
+                    , wrappedRow [ spacing 10 ]
+                        [ Input.text (Styles.textFieldStyle ++ [ width <| minimum 80 <| fillPortion 1 ])
+                            { label = labelAbove [ width shrink, Font.underline ] <| text "BPM"
                             , onChange = BpmChanged
                             , text = model.bpm |> String.fromInt
                             , placeholder = Nothing
                             }
-                        , Input.text (Styles.textFieldStyle ++ [ width <| fillPortion 3 ])
-                            { label = labelLeft [ width shrink ] <| text "Name"
+                        , trillControl
+                        , Input.text (Styles.textFieldStyle ++ [ width <| minimum 320 <| fillPortion 3 ])
+                            { label = labelAbove [ width shrink, Font.underline ] <| text "Name"
                             , onChange = NameChanged
                             , text = model.targetName
                             , placeholder = Nothing
                             }
-                        , button ((width <| fillPortion 1) :: Font.center :: Styles.button)
+                        , button ((width <| fillPortion 1) :: alignBottom :: Font.center :: Styles.button)
                             { label = text "Convert", onPress = Just ConversionRequested }
                         ]
                     , case model.schedule of
@@ -587,6 +650,16 @@ update msg model =
 
         ConversionRequested ->
             let
+                trillInterval =
+                    case model.trillInterval of
+                        Absolute typedTime ->
+                            typedTime
+
+                        PerBeat float ->
+                            TypedTime.minutes 1
+                                |> TypedTime.divide (toFloat model.bpm)
+                                |> TypedTime.divide float
+
                 params : ConversionParameters
                 params =
                     { bpm = model.bpm
@@ -600,6 +673,7 @@ update msg model =
                     , roleMapping =
                         model.roleMapping
                             |> Dict.filterMap (\_ { roleName, port_ } -> Maybe.map2 Tuple.pair roleName port_)
+                    , trillInterval = trillInterval
                     }
             in
             case model.hapticScore of
@@ -646,3 +720,6 @@ update msg model =
 
         ChangeSettingsTo newSettings ->
             ( { model | displayedDynamics = newSettings }, Cmd.none )
+
+        TrillIntervalChanged trillInterval ->
+            ( { model | trillInterval = trillInterval }, Cmd.none )

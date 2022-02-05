@@ -18,7 +18,7 @@ module Extra.TypedTime exposing
     , toMillisecondsString
     , toMinutes
     , zero
-    , sum, fromPosix, subtract, greaterEqual)
+    , sum, fromPosix, subtract, greaterEqual, divideByInterval)
 
 import Float.Extra
 import Time exposing (Posix)
@@ -86,6 +86,10 @@ divide op2 t =
                     / op2
            )
         |> milliseconds
+
+divideByInterval : TypedTime -> TypedTime -> Float
+divideByInterval (Milliseconds t2) (Milliseconds t1) =
+    t1 / t2
 
 
 multiply : Float -> TypedTime -> TypedTime
