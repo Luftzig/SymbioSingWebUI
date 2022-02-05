@@ -76,7 +76,7 @@ type HapticNote
     = Rest Dynamic Timing
     | Hold Dynamic Timing
     | Actuate Dynamic Timing
-    | Trill Timing -- Used only for the palm
+    | Trill Dynamic Timing -- Used only for the palm
 
 
 type alias Timing =
@@ -431,7 +431,8 @@ parseMusicXmlWith _ input =
                         Ok (Hold Pianississimo duration_)
 
                     else if hasTrill then
-                        Ok (Trill duration_)
+                        -- TODO: Should we have a default value?
+                        Ok (Trill (lastDynamic |> Maybe.withDefault Mezzopiano) duration_)
 
                     else
                         case lastDynamic of
@@ -485,7 +486,6 @@ type IntermediateAction
     = Inflate
     | Release
     | NoChange
-    | Vibrate
 
 
 type alias IntermediateRepr =
@@ -576,48 +576,65 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                     Int
                     -> HapticNote
                     ->
-                        { duration : TypedTime
-                        , action : IntermediateAction
-                        , dynamic : Dynamic
-                        , measureNumber : Int
-                        , numberInMeasure : Int
-                        }
+                        List
+                            { duration : TypedTime
+                            , action : IntermediateAction
+                            , dynamic : Dynamic
+                            , measureNumber : Int
+                            , numberInMeasure : Int
+                            }
                 noteToIntermediate noteIndex hapticNote =
                     case hapticNote of
                         Rest dynamic t ->
-                            { duration = toDuration t
-                            , action = Release
-                            , dynamic = dynamic
-                            , measureNumber = number
-                            , numberInMeasure = noteIndex
-                            }
+                            [ { duration = toDuration t
+                              , action = Release
+                              , dynamic = dynamic
+                              , measureNumber = number
+                              , numberInMeasure = noteIndex
+                              }
+                            ]
 
                         Hold dynamic t ->
-                            { duration = toDuration t
-                            , action = NoChange
-                            , dynamic = dynamic
-                            , measureNumber = number
-                            , numberInMeasure = noteIndex
-                            }
+                            [ { duration = toDuration t
+                              , action = NoChange
+                              , dynamic = dynamic
+                              , measureNumber = number
+                              , numberInMeasure = noteIndex
+                              }
+                            ]
 
                         Actuate dynamic t ->
-                            { duration = toDuration t
-                            , action = Inflate
-                            , dynamic = dynamic
-                            , measureNumber = number
-                            , numberInMeasure = noteIndex
-                            }
+                            [ { duration = toDuration t
+                              , action = Inflate
+                              , dynamic = dynamic
+                              , measureNumber = number
+                              , numberInMeasure = noteIndex
+                              }
+                            ]
 
-                        Trill t ->
-                            { duration = toDuration t
-                            , action = Vibrate
-                            , dynamic = Mezzopiano
-                            , measureNumber = number
-                            , numberInMeasure = noteIndex
-                            }
+                        Trill dynamic t ->
+                            List.range 0 (t - 1)
+                                |> List.map
+                                    (\i ->
+                                        if (i |> modBy 2) == 0 then
+                                            Inflate
+
+                                        else
+                                            NoChange
+                                    )
+                                |> List.map
+                                    (\action ->
+                                        { duration = durationPerDivision
+                                        , action = action
+                                        , dynamic = dynamic
+                                        , measureNumber = number
+                                        , numberInMeasure = noteIndex
+                                        }
+                                    )
             in
             notes
                 |> List.indexedMap noteToIntermediate
+                |> List.concat
 
         durationsToAbsolutes :
             TypedTime
@@ -783,10 +800,6 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                     List.filter (.action >> (==) Inflate) actions
                                         |> List.indexedMap Tuple.pair
 
-                                vibrateActions =
-                                    List.filter (.action >> (==) Vibrate) actions
-                                        |> List.indexedMap Tuple.pair
-
                                 errorCtx =
                                     List.head actions
                                         |> (\repr ->
@@ -807,11 +820,11 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                         |> List.map noteErrorString
                                         |> String.join ", "
                             in
-                            case ( List.isEmpty releaseActions, List.isEmpty inflateActions, List.isEmpty vibrateActions ) of
-                                ( True, True, True ) ->
+                            case ( List.isEmpty releaseActions, List.isEmpty inflateActions ) of
+                                ( True, True ) ->
                                     Ok NoChange
 
-                                ( False, False, _ ) ->
+                                ( False, False ) ->
                                     Err
                                         (errorCtx
                                             ++ " conflicting actions: Release ["
@@ -821,26 +834,10 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                             ++ "]"
                                         )
 
-                                ( False, _, False ) ->
-                                    Err
-                                        (errorCtx
-                                            ++ " conflicting actions: Release ["
-                                            ++ conflictingError releaseActions
-                                            ++ "] and Vibrate ["
-                                            ++ conflictingError vibrateActions
-                                            ++ "]"
-                                        )
-
-                                ( True, False, True ) ->
+                                ( True, False ) ->
                                     Ok Inflate
 
-                                ( True, True, False ) ->
-                                    Ok Vibrate
-
-                                ( True, False, False ) ->
-                                    Ok Inflate
-
-                                ( False, True, True ) ->
+                                ( False, True ) ->
                                     Ok Release
 
                         toFlowIOAction : IntermediateAction -> FlowIO.FlowIOAction
@@ -855,14 +852,11 @@ scoreToSchedule { bpm, roleMapping, dynamics } hapticScore =
                                 Release ->
                                     FlowIO.Release
 
-                                Vibrate ->
-                                    FlowIO.Inflate
-
                         settleDynamic : List ( IntermediateAction, Dynamic ) -> Int
                         settleDynamic dyns =
                             let
                                 actuationOnly =
-                                    dyns |> List.filter (\( action, _ ) -> action == Inflate || action == Vibrate)
+                                    dyns |> List.filter (\( action, _ ) -> action == Inflate)
 
                                 maxDynamic =
                                     actuationOnly
