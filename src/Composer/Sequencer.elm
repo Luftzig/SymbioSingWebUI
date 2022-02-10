@@ -1,4 +1,13 @@
-module Composer.Sequencer exposing (IncomingMsg(..), Model, Msg, OutgoingMsg(..), init, send, subscriptions, update, view, viewDialog)
+module Composer.Sequencer exposing
+    ( Model
+    , OutgoingMsg(..)
+    , init
+    , send
+    , subscriptions
+    , update
+    , view
+    , viewDialog
+    )
 
 import Array exposing (Array)
 import Color.Dracula as Dracula
@@ -21,7 +30,8 @@ import Images
 import Json.Decode as JD
 import List.Extra as List
 import LocalStorage
-import Scheduler exposing (Instructions, RoleName, instructionsDecoder)
+import Messages exposing (..)
+import Scheduler exposing (instructionsDecoder)
 import Set exposing (Set)
 import Styles exposing (fullWidth)
 import Task
@@ -62,12 +72,6 @@ type DialogStatus
     | AssignRoleDialog String
 
 
-type alias CommandsEntry =
-    { startTime : TypedTime
-    , commands : List { device : Device, deviceIndex : Int, command : Command }
-    }
-
-
 type RunStatus
     = NotRunning
     | Running { startTime : TypedTime, nextCommands : List CommandsEntry, elapsedTime : TypedTime }
@@ -86,49 +90,7 @@ init =
     }
 
 
-type Msg
-    = ReceivedMessage IncomingMsg
-    | RequestLoadFromScheduler
-    | RequestFromConverter
-    | LoadFromStorageRequested
-    | LoadFromStorage String
-    | RequestUploadInstructions
-    | InstructionsFileSelected File
-    | InstructionFileRead String String
-    | OpenSaveSequenceDialog
-    | DownloadSequence
-    | RequestSequenceUpload
-    | CloseDialog
-    | AddPartToSequence String
-    | TogglePartDetails String
-    | RemoveFromSequence Int
-    | MovePart Int MoveDirection
-    | RoleClicked String
-    | DeviceAssignmentChanged String Device Bool
-    | PlaySequenceRequested
-    | PlaySequenceStarted (List CommandsEntry) Posix
-    | PlaySequenceStopped
-    | Tick Posix
-
-
-type MoveDirection
-    = MoveUp
-    | MoveDown
-
-
-
--- | MoveToBeginning
--- | MoveToEnd
--- | MoveToPosition Int
-
-
-type IncomingMsg
-    = DevicesChanged (Array Device)
-    | ReceivedNewPart String Instructions
-    | BackdropClicked
-
-
-send : IncomingMsg -> Msg
+send : SequencerIncomingMsg -> SequencerMsg
 send =
     ReceivedMessage
 
@@ -142,17 +104,17 @@ type OutgoingMsg
     | HideDialog
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : Model -> Sub SequencerMsg
 subscriptions { runStatus } =
     case runStatus of
         NotRunning ->
             Sub.none
 
         Running _ ->
-            Time.every 5 Tick
+            Time.every 5 SequencerTick
 
 
-update : Msg -> Model -> ( Model, OutgoingMsg, Cmd Msg )
+update : SequencerMsg -> Model -> ( Model, OutgoingMsg, Cmd SequencerMsg )
 update msg model =
     case msg of
         ReceivedMessage incomingMsg ->
@@ -421,7 +383,7 @@ update msg model =
         PlaySequenceStopped ->
             ( { model | runStatus = NotRunning }, NoMessage, Cmd.none )
 
-        Tick tickTime ->
+        SequencerTick tickTime ->
             case model.runStatus of
                 NotRunning ->
                     ( model, NoMessage, Cmd.none )
@@ -456,7 +418,7 @@ update msg model =
                             ( { model | runStatus = NotRunning }, NoMessage, Cmd.none )
 
 
-view : Model -> Element Msg
+view : Model -> Element SequencerMsg
 view model =
     column [ fullWidth, height fill, spacing 10 ]
         [ viewRoleAssignments model
@@ -468,7 +430,7 @@ view model =
         ]
 
 
-viewRoleAssignments : Model -> Element Msg
+viewRoleAssignments : Model -> Element SequencerMsg
 viewRoleAssignments model =
     let
         roles =
@@ -508,7 +470,7 @@ viewRoleAssignments model =
         ]
 
 
-viewSequence : Model -> Element Msg
+viewSequence : Model -> Element SequencerMsg
 viewSequence { sequence, roleAssignments } =
     let
         numParts =
@@ -635,7 +597,7 @@ viewSequence { sequence, roleAssignments } =
             ]
 
 
-viewAvailableParts : Model -> Element Msg
+viewAvailableParts : Model -> Element SequencerMsg
 viewAvailableParts model =
     let
         newPartControls =
@@ -658,7 +620,7 @@ viewAvailableParts model =
                     }
                 ]
 
-        viewPart : ( String, Instructions ) -> Element Msg
+        viewPart : ( String, Instructions ) -> Element SequencerMsg
         viewPart ( partName, instructions ) =
             let
                 length =
@@ -708,7 +670,7 @@ viewAvailableParts model =
         ]
 
 
-viewControls : Model -> Element Msg
+viewControls : Model -> Element SequencerMsg
 viewControls model =
     row [ centerX, alignBottom ]
         [ row [ spacing 5, width <| fillPortion 3 ] <|
@@ -747,7 +709,7 @@ viewControls model =
         ]
 
 
-viewDialog : Model -> Element Msg
+viewDialog : Model -> Element SequencerMsg
 viewDialog model =
     let
         dialogBase title content =
@@ -778,7 +740,7 @@ viewDialog model =
         LoadFromStorageDialog ->
             dialogBase "Load" none
 
-        SaveSequenceDialog string ->
+        SaveSequenceDialog _ ->
             dialogBase "Save" none
 
         AssignRoleDialog roleName ->
@@ -796,7 +758,7 @@ viewDialog model =
                 isAssigned device =
                     Set.member (getId device) assignments
 
-                displayDeviceCheckbox : Device -> Element Msg
+                displayDeviceCheckbox : Device -> Element SequencerMsg
                 displayDeviceCheckbox device =
                     row [ fullWidth, spacing 10 ]
                         [ checkbox []

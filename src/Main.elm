@@ -4,10 +4,9 @@ import Array exposing (Array)
 import Array.Extra
 import Browser
 import Browser.Events
-import Color
 import Color.Dracula as Dracula
 import Composer.Converter as Converter
-import Composer.Sequencer as Sequencer exposing (IncomingMsg(..), OutgoingMsg(..))
+import Composer.Sequencer as Sequencer exposing (OutgoingMsg(..))
 import Element as El
 import Element.Background as UIBackground
 import Element.Border as UIBorder
@@ -22,10 +21,11 @@ import Images exposing (configGeneralIcon, configInflateParallelIcon, configInfl
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
 import LocalStorage
-import Scheduler exposing (IncomingMsg(..))
+import Messages exposing (..)
+import Scheduler
 import Sensors
 import Set exposing (Set)
-import Styles exposing (actuateButton, borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, elementColorToColor, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, tabStyle, vacuumButton)
+import Styles exposing (actuateButton, borderWhite, bottomBorder, buttonCssIcon, darkGrey, fullWidth, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, tabStyle, vacuumButton)
 import Task
 import Time
 
@@ -78,52 +78,6 @@ togglePanel state =
             PanelOpen
 
 
-type MainTab
-    = SchedulerTab
-    | SensorReadingsTab
-    | NotationConverterTab
-    | SequencerTab
-
-
-type Msg
-    = AddDevice
-    | RemoveDevice Int
-    | ConnectToDevice Int
-    | DeviceStatusChanged { deviceIndex : Int, status : String, details : Maybe Value }
-    | RequestControlServiceUpdates Int
-    | DisconnectDevice Int
-    | ControlServiceUpdate { deviceIndex : Int, status : Value }
-    | SendCommand Int Command
-    | ChangeCommandPortState Int FlowIO.Port FlowIO.PortState
-    | ChangeCommandPwm Int Int
-    | ActionClicked Int Action
-    | ActionReleased
-    | SchedulerMessage Scheduler.Msg
-    | DeviceConfigurationChanged { deviceIndex : Int, configuration : Maybe Configuration }
-    | RequestDeviceConfiguration Int
-    | SetDeviceConfiguration Int Configuration
-    | ToggleServicePanelState
-    | AddServiceToPanel Int Service
-    | RemoveServiceFromPanel Int Service
-    | DevicePowerOffStatusChange Int PowerOffStatus
-    | SendNewPowerOffStatus Int PowerOffStatus
-    | SensorReadingReceived Int (Result Json.Decode.Error AnalogReadings)
-    | SensorReadingTimestampAttached Int ( Time.Posix, AnalogReadings )
-    | SensorReadingModeChanged Int AnalogServiceRequest
-    | SensorsMessage Sensors.Msg
-    | ComposerMessage Converter.Msg
-    | ChangeTabTo MainTab
-    | WindowDimensionsChanged Int Int
-    | NoAction String
-    | ToggleErrorLog
-    | ScheduleLoaded String String
-    | ReceivedSavedSchedules (List String)
-    | ToggleSavedMenu
-    | SavedScheduleRequested String
-    | SequencerMessage Sequencer.Msg
-    | SendInstructionsToSequencerRequestedFromScheduler
-    | SendInstructionsToSequencerRequestedFromConverter
-    | DialogBackDropClicked
 
 
 initModel : { width : Int, height : Int } -> Model
@@ -634,7 +588,7 @@ update msg model =
                 Just id ->
                     let
                         ( sensorData, cmd ) =
-                            Sensors.update model.sensorData (Sensors.NewReading id timestamp analogReadings)
+                            Sensors.update model.sensorData (NewReading id timestamp analogReadings)
                     in
                     ( { model
                         | sensorData = sensorData
@@ -1077,7 +1031,7 @@ displayServices { devices, servicesPanel } =
             El.row [ El.spacing 5, El.padding 5 ]
                 [ inflateButton (onMouseDown Inflate) ActionReleased
                 , vacuumButton (onMouseDown Vacuum) ActionReleased
-                , actuateButton (onMouseDown Actuate) ActionReleased
+                , actuateButton (onMouseDown FlowIO.Actuate) ActionReleased
                 , releaseButton (onMouseDown Release) ActionReleased
                 , stopButton (onMouseDown Stop) ActionReleased
                 ]

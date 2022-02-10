@@ -1,17 +1,9 @@
 module Composer.Notation exposing
     ( ConversionParameters
-    , Dynamic(..)
     , Dynamics
-    , HapticNote(..)
-    , HapticPart
-    , HapticScore
     , IntermediateAction(..)
     , IntermediateRepr
-    , Measure
     , NotationParserConfiguration
-    , PartID
-    , PartialMeasure
-    , Signature
     , parseMusicXml
     , parseMusicXmlWith
     , scoreToSchedule
@@ -27,71 +19,14 @@ import Extra.Xml exposing (oneOfTags, tagPath)
 import FlowIO exposing (Action, Command, PortState, portToIndex)
 import List.Extra
 import Maybe.Extra as Maybe
+import Messages exposing (Dynamic(..), HapticNote(..), HapticPart, HapticScore, Instructions, Measure, PartID, PartialMeasure, RoleName, RolesInstructions, Signature, Timing)
 import Regex
 import Result.Extra as Result
-import Scheduler
 import Set
 import Xml exposing (Value(..))
 import Xml.Decode exposing (decode)
 import Xml.Query exposing (contains, int, string, tag, tags)
 
-
-type alias HapticScore =
-    Dict PartID HapticPart
-
-
-type alias PartID =
-    String
-
-
-type alias HapticPart =
-    { name : String
-    , measures : List Measure
-    }
-
-
-type alias Measure =
-    { number : Int
-    , signature : Signature
-    , divisionsPerQuarter : Int
-    , notes : List HapticNote
-    }
-
-
-type alias PartialMeasure =
-    { number : Int
-    , signature : Maybe Signature
-    , divisionsPerQuarter : Maybe Int
-    , notes : List HapticNote
-    }
-
-
-type alias Signature =
-    { beats : Int
-    , beatType : Timing
-    }
-
-
-type HapticNote
-    = Rest Dynamic Timing
-    | Hold Dynamic Timing
-    | Actuate Dynamic Timing
-    | Trill Dynamic Timing -- Used only for the palm
-
-
-type alias Timing =
-    Int
-
-
-type Dynamic
-    = Pianississimo
-    | Pianissimo
-    | Piano
-    | Mezzopiano
-    | Mezzoforte
-    | Forte
-    | Fortissimo
-    | Fortississimo
 
 
 dynamicToInt : Dynamic -> Int
@@ -477,7 +412,7 @@ type alias Dynamics =
 
 type alias ConversionParameters =
     { bpm : Int
-    , roleMapping : Dict String ( Scheduler.RoleName, FlowIO.Port )
+    , roleMapping : Dict String ( RoleName, FlowIO.Port )
     , dynamics : Dynamics
     , trillInterval : TypedTime
     }
@@ -498,7 +433,7 @@ type alias IntermediateRepr =
     }
 
 
-scoreToSchedule : ConversionParameters -> HapticScore -> Result String Scheduler.Instructions
+scoreToSchedule : ConversionParameters -> HapticScore -> Result String Instructions
 scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
     let
         dynamicToPwm : Dynamic -> Int
@@ -665,7 +600,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
 
         roles :
             Dict
-                Scheduler.RoleName
+                RoleName
                 (List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port })
         roles =
             roleMapping
@@ -717,7 +652,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
         commonTimeline =
             Array.toList commonTime
 
-        instructions : Result String Scheduler.RolesInstructions
+        instructions : Result String RolesInstructions
         instructions =
             roles
                 |> Dict.map convertToInstructions
@@ -727,7 +662,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                 |> Result.map Dict.fromList
 
         convertToInstructions :
-            Scheduler.RoleName
+            RoleName
             -> List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port }
             -> Result String (Array FlowIO.Command)
         convertToInstructions roleName intermediatesList =

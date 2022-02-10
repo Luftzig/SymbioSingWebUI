@@ -1,11 +1,6 @@
 module Scheduler exposing
     ( Effect(..)
-    , IncomingMsg(..)
-    , Instructions
     , Model
-    , Msg(..)
-    , RoleName
-    , RolesInstructions
     , encodeInstructions
     , initModel
     , instructionsDecoder
@@ -20,7 +15,7 @@ import Array.Extra as AE
 import Color.Dracula as Dracula
 import Dict exposing (Dict)
 import Dict.Extra
-import Element as El exposing (fillPortion, indexedTable, mouseOver)
+import Element as El exposing (fillPortion, indexedTable)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events
@@ -37,7 +32,8 @@ import Html.Attributes
 import Images exposing (actuateIcon)
 import Json.Decode as JD
 import Json.Encode as JE
-import Styles exposing (buttonPadding, externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
+import Messages exposing (..)
+import Styles exposing (externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
 import Task
 import Time exposing (Posix)
 
@@ -48,28 +44,9 @@ type SchedulerState
     | RunningInstructions { startTime : Posix, commandIndex : Int }
 
 
-type alias RoleName =
-    String
-
-
-type alias RolesInstructions =
-    Dict RoleName (Array Command)
-
-
-type alias Instructions =
-    { time : Array TypedTime
-    , instructions : RolesInstructions
-    }
-
-
 type RoleEditState
     = NotEditing
     | Editing Int
-
-
-type RoleDeviceSelectState
-    = SelectionClosed
-    | SelectionOpen Int
 
 
 type alias Model =
@@ -109,7 +86,7 @@ initModel =
     }
 
 
-view : Model -> El.Element Msg
+view : Model -> El.Element SchedulerMsg
 view model =
     El.el
         [ Font.family [ Font.typeface "Overpass", Font.typeface "Open Sans", Font.typeface "Helvetica", Font.sansSerif ]
@@ -126,7 +103,7 @@ view model =
         )
 
 
-header : Model -> El.Element Msg
+header : Model -> El.Element SchedulerMsg
 header { roles, scheduleName } =
     let
         nextRoleName =
@@ -218,7 +195,7 @@ actionSelection command onChange =
         { options =
             [ Element.Input.optionWith Inflate <| renderOption inflateIcon
             , Element.Input.optionWith Vacuum <| renderOption vacuumIcon
-            , Element.Input.optionWith Actuate <| renderOption (Images.svgElement 32 [] actuateIcon)
+            , Element.Input.optionWith FlowIO.Actuate <| renderOption (Images.svgElement 32 [] actuateIcon)
             , Element.Input.optionWith Release <| renderOption releaseIcon
             , Element.Input.optionWith Stop <| renderOption stopIcon
             ]
@@ -228,7 +205,7 @@ actionSelection command onChange =
         }
 
 
-pwmControl : Command -> Bool -> String -> (String -> Msg) -> El.Element Msg
+pwmControl : Command -> Bool -> String -> (String -> SchedulerMsg) -> El.Element SchedulerMsg
 pwmControl inst isDisabled label onChange =
     let
         numberAttrs =
@@ -318,7 +295,7 @@ portsSelection inst onPortChange =
         ]
 
 
-schedulerControls : RoleName -> SchedulerState -> Int -> Command -> El.Element Msg
+schedulerControls : RoleName -> SchedulerState -> Int -> Command -> El.Element SchedulerMsg
 schedulerControls role state rowIndex command =
     let
         currentlyRunningRow =
@@ -355,7 +332,7 @@ border =
     ]
 
 
-schedulerRow : RoleName -> SchedulerState -> Int -> SchedulerRow -> El.Element Msg
+schedulerRow : RoleName -> SchedulerState -> Int -> SchedulerRow -> El.Element SchedulerMsg
 schedulerRow role state index row =
     case row of
         ExistingInstruction _ dict ->
@@ -389,7 +366,7 @@ type SchedulerRow
     | TooManyInstructions TypedTime Int
 
 
-devicesTable : Model -> El.Element Msg
+devicesTable : Model -> El.Element SchedulerMsg
 devicesTable model =
     let
         instructionsAt : Int -> RolesInstructions -> Dict RoleName Command
@@ -440,7 +417,7 @@ devicesTable model =
         cellWrapper borderColor content =
             El.el [ El.padding 2, cellHeight, Border.width 1, borderColor ] content
 
-        timeColumn : El.IndexedColumn SchedulerRow Msg
+        timeColumn : El.IndexedColumn SchedulerRow SchedulerMsg
         timeColumn =
             { header = El.el (El.height El.fill :: El.padding 4 :: border) <| El.text "Time (ms)"
             , width = El.maximum 80 (fillPortion 1)
@@ -545,7 +522,7 @@ devicesTable model =
                                         TypedTime.toMillisecondsString time
             }
 
-        roleHeader : Int -> RoleName -> El.Element Msg
+        roleHeader : Int -> RoleName -> El.Element SchedulerMsg
         roleHeader roleIndex roleName =
             let
                 device =
@@ -609,7 +586,7 @@ devicesTable model =
                         deviceIds =
                             AE.filterMap (.details >> Maybe.map .id) model.devices
 
-                        devicesList : El.Element Msg
+                        devicesList : El.Element SchedulerMsg
                         devicesList =
                             El.column
                                 [ fullWidth
@@ -662,7 +639,7 @@ devicesTable model =
                 , deviceSelection
                 ]
 
-        roleColumn : Int -> RoleName -> El.IndexedColumn SchedulerRow Msg
+        roleColumn : Int -> RoleName -> El.IndexedColumn SchedulerRow SchedulerMsg
         roleColumn roleIndex roleName =
             { header = roleHeader roleIndex roleName
             , width = El.maximum 300 <| fillPortion 2
@@ -691,7 +668,7 @@ attrIfElse condition ifTrue ifFalse =
         ifFalse
 
 
-buttons : Model -> El.Element Msg
+buttons : Model -> El.Element SchedulerMsg
 buttons model =
     let
         numRolesAssociated =
@@ -745,41 +722,6 @@ buttons model =
         ]
 
 
-type Msg
-    = AddInstruction
-    | DeleteLastInstruction
-    | ResetInstructions
-    | InstructionTimeChanged Int String
-    | ActionChanged RoleName Int Action
-    | PWMChanged RoleName Int String
-    | PortStateChanged RoleName Int Port Bool
-    | RunInstructions
-    | StartInstructions Posix
-    | StopInstructions
-    | DownloadInstructions
-    | SaveInstructions
-    | UploadInstructions
-    | UploadSelected File.File
-    | FileRead String
-    | DisabledFieldClicked String
-    | AddRole String
-    | RemoveRole Int
-    | ReorderRole Int Int
-    | RenameRole Int String
-    | EditRole Int
-    | EndRoleEditing
-    | AssociateRoleToDevice RoleName (Maybe String)
-    | ChangeDeviceSelection RoleDeviceSelectState
-    | Tick Posix
-    | LoadFromConverter
-    | ReceivedIncomingMsg IncomingMsg
-    | ScheduleNameChanged String
-
-
-type IncomingMsg
-    = InstructionsLoaded String Instructions
-    | ConverterScheduleUpdates (Resource String Instructions)
-
 
 type Effect
     = NoEffect
@@ -828,12 +770,12 @@ arrayMove origin target arr =
         |> Maybe.withDefault arr
 
 
-send : IncomingMsg -> Msg
+send : SchedulerIncomingMsg -> SchedulerMsg
 send =
     ReceivedIncomingMsg
 
 
-update : Msg -> Model -> ( Model, Effect, Cmd Msg )
+update : SchedulerMsg -> Model -> ( Model, Effect, Cmd SchedulerMsg )
 update msg model =
     let
         updateInstructionForRole :
@@ -1113,7 +1055,7 @@ update msg model =
         StopInstructions ->
             ( { model | state = Stopped }, NoEffect, Cmd.none )
 
-        Tick posix ->
+        SchedulerTick posix ->
             case model.state of
                 Paused _ ->
                     ( model, LogError "Paused is not implemented", Cmd.none )
@@ -1174,7 +1116,7 @@ update msg model =
                                                 encodeCommand <| translateActionInCommand device command
                                             }
 
-                                    commands : List (Cmd Msg)
+                                    commands : List (Cmd SchedulerMsg)
                                     commands =
                                         instructions
                                             |> Dict.toList
@@ -1252,7 +1194,7 @@ defaultTickIntervalMilliSeconds =
     5
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : Model -> Sub SchedulerMsg
 subscriptions { state } =
     let
         runInstructionsSub =
@@ -1264,7 +1206,7 @@ subscriptions { state } =
                     Sub.none
 
                 RunningInstructions _ ->
-                    Time.every defaultTickIntervalMilliSeconds Tick
+                    Time.every defaultTickIntervalMilliSeconds SchedulerTick
     in
     Sub.batch
         [ runInstructionsSub

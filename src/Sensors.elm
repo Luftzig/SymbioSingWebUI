@@ -1,4 +1,4 @@
-module Sensors exposing (Model, Msg(..), barChart, initialModel, update, view)
+module Sensors exposing (Model, barChart, initialModel, update, view)
 
 import Array
 import Array.Extra
@@ -15,6 +15,7 @@ import Element.Input
 import Float.Extra
 import FlowIO exposing (AnalogReadings, DeviceId)
 import Images exposing (bodyImage, lightBlue, midnightBlue)
+import Messages exposing (..)
 import Styles exposing (externClass, fullWidth)
 import Time
 
@@ -32,12 +33,7 @@ initialModel =
     }
 
 
-type Msg
-    = NewReading DeviceId Time.Posix AnalogReadings
-    | DeviceSelected (Maybe DeviceId)
-
-
-view : Model -> El.Element Msg
+view : Model -> El.Element SensorsMsg
 view model =
     let
         showDevice ( device, data ) =
@@ -120,7 +116,7 @@ maxReadings =
     1000
 
 
-update : Model -> Msg -> ( Model, Cmd Msg )
+update : Model -> SensorsMsg -> ( Model, Cmd SensorsMsg )
 update model msg =
     case msg of
         NewReading deviceId timestamp analogReadings ->
@@ -139,7 +135,7 @@ update model msg =
             ( { model | selectedDevice = maybeDevice }, Cmd.none )
 
 
-barChart : { width : Float, height : Float } -> Time.Posix -> AnalogReadings -> El.Element Msg
+barChart : { width : Float, height : Float } -> Time.Posix -> AnalogReadings -> El.Element SensorsMsg
 barChart { width, height } timestamp analogReadings =
     El.html <|
         C.chart

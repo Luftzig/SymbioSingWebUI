@@ -1,7 +1,12 @@
-module Composer.Converter exposing (Model, Msg, init, update, view)
+module Composer.Converter exposing (Model, init, update, view)
 
 import Color.Dracula as Dracula
-import Composer.Notation as Notation exposing (ConversionParameters, Dynamic(..), Dynamics, HapticScore, PartID, parseMusicXml)
+import Composer.Notation as Notation
+    exposing
+        ( ConversionParameters
+        , Dynamics
+        , parseMusicXml
+        )
 import Dict exposing (Dict)
 import Dict.Extra as Dict
 import Element exposing (Element, alignBottom, alignRight, below, column, el, fillPortion, minimum, padding, paddingEach, paddingXY, paragraph, row, shrink, spacing, table, text, width, wrappedRow)
@@ -19,6 +24,7 @@ import FlowIO
 import Json.Encode as JE
 import LocalStorage
 import Maybe.Extra as Maybe
+import Messages exposing (..)
 import Process
 import Regex exposing (Regex)
 import Result.Extra as Result
@@ -32,25 +38,15 @@ type alias Model =
     { sourceFile : Maybe File
     , hapticScore : Resource String HapticScore
     , bpm : Int
-    , roleMapping : Dict PartID { roleName : Maybe Scheduler.RoleName, port_ : Maybe FlowIO.Port }
+    , roleMapping : Dict PartID { roleName : Maybe RoleName, port_ : Maybe FlowIO.Port }
     , dynamics : Dynamics
     , regulatorSettings : Dynamics
     , displayedDynamics : DynamicsSettings
     , trillInterval : TrillInterval
     , showRolesSuggestions : Maybe PartID
-    , schedule : Resource String Scheduler.Instructions
+    , schedule : Resource String Instructions
     , targetName : String
     }
-
-
-type DynamicsSettings
-    = PWMValues
-    | RegulatorValues
-
-
-type TrillInterval
-    = Absolute TypedTime
-    | PerBeat Float
 
 
 init : Model
@@ -92,28 +88,7 @@ defaultRegulatorSettings =
     }
 
 
-type Msg
-    = SelectScoreFile
-    | FileSelected File
-    | ParsingCompleted (Result String HapticScore)
-    | PortSelected PartID FlowIO.Port
-    | PartRoleNameChanged PartID String
-    | RoleNameInputFieldFocused PartID
-    | RoleNameInputFieldLostFocus PartID
-    | LoseFocusDelayWaited PartID
-    | RoleSuggestionSelected PartID String
-    | ConversionRequested
-    | DownloadRequested Scheduler.Instructions
-    | BpmChanged String
-    | UpdateDynamic Dynamic Float
-    | UpdateRegulator Dynamic Float
-    | NameChanged String
-    | SaveSchedule String Scheduler.Instructions
-    | ChangeSettingsTo DynamicsSettings
-    | TrillIntervalChanged TrillInterval
-
-
-view : Model -> Element Msg
+view : Model -> Element ConverterMsg
 view model =
     column [ Styles.fullWidth, spacing 10 ]
         [ loadFile model
@@ -138,7 +113,7 @@ showHapticScore hapticScore =
         NotLoaded ->
             el [] <| Element.none
 
-        Loaded d ->
+        Loaded _ ->
             el [] <| text "File parsed successfully!"
 
         Error e ->
@@ -348,7 +323,7 @@ showDynamicsControls { dynamics, regulatorSettings, displayedDynamics } =
         )
 
 
-showRoleMapping : Model -> Dict Notation.PartID String -> Element Msg
+showRoleMapping : Model -> Dict PartID String -> Element ConverterMsg
 showRoleMapping { roleMapping, showRolesSuggestions } partNames =
     let
         data =
@@ -364,7 +339,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
             , port_ = Dict.get partId roleMapping |> Maybe.andThen .port_
             }
 
-        error : String -> Element.Attribute Msg
+        error : String -> Element.Attribute ConverterMsg
         error message =
             below <|
                 el
@@ -392,7 +367,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
             , view =
                 \{ roleName, partId } ->
                     let
-                        otherParts : List ( PartID, { roleName : Maybe Scheduler.RoleName, port_ : Maybe FlowIO.Port } )
+                        otherParts : List ( PartID, { roleName : Maybe RoleName, port_ : Maybe FlowIO.Port } )
                         otherParts =
                             roleMapping
                                 |> Dict.toList
@@ -419,7 +394,7 @@ showRoleMapping { roleMapping, showRolesSuggestions } partNames =
                                 |> Set.fromList
                                 |> Set.toList
 
-                        suggestionsList : Element Msg
+                        suggestionsList : Element ConverterMsg
                         suggestionsList =
                             column
                                 [ spacing 5
@@ -521,7 +496,7 @@ removeExtension =
     Regex.fromString "\\.[^.]+$"
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : ConverterMsg -> Model -> ( Model, Cmd ConverterMsg )
 update msg model =
     let
         updateRoleName partID name =
