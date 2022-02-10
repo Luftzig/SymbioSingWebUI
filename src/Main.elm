@@ -1001,7 +1001,7 @@ displayServices { devices, servicesPanel } =
         displayControls deviceIndex configuration command =
             let
                 pwmControl =
-                    if configuration == Just RegulatedPressure then
+                    if configuration == Just RegulatedPressure || configuration == Just RegulatedVacuum then
                         [ UIInput.radioRow
                             [ Styles.fontSize.small
                             , El.spacing 10

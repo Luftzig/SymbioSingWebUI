@@ -624,6 +624,8 @@ configurationDecoding int =
         "REGULATED_PRESSURE" ->
             Just RegulatedPressure
 
+        "REGULATED_VACUUM" ->
+            Just RegulatedVacuum
         _ ->
             Nothing
 
