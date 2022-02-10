@@ -1,4 +1,4 @@
-module Extra.RemoteService exposing (Service, init, initFromCommand, updateCommand, updateData, getData, getCommand)
+module Extra.RemoteService exposing (RemoteService, init, initFromCommand, updateCommand, updateData, getData, getCommand)
 
 {- This is modeled after the RemoteData type.
    A service is a remote provider that can receive commands and return data.
@@ -6,29 +6,29 @@ module Extra.RemoteService exposing (Service, init, initFromCommand, updateComma
 -}
 
 
-type Service data command
+type RemoteService data command
     = Uninitialised
     | DataReceived data
     | CommandSent command
     | HasDataCommandSent data command
 
 
-init : Service data command
+init : RemoteService data command
 init =
     Uninitialised
 
 
-initFromData : data -> Service data command
+initFromData : data -> RemoteService data command
 initFromData data =
     DataReceived data
 
 
-initFromCommand : command -> Service data command
+initFromCommand : command -> RemoteService data command
 initFromCommand command =
     CommandSent command
 
 
-updateData : data -> Service data command -> Service data command
+updateData : data -> RemoteService data command -> RemoteService data command
 updateData data service =
     case service of
         Uninitialised ->
@@ -44,7 +44,7 @@ updateData data service =
             HasDataCommandSent data command
 
 
-updateCommand : cmd -> Service data cmd -> Service data cmd
+updateCommand : cmd -> RemoteService data cmd -> RemoteService data cmd
 updateCommand cmd service =
     case service of
         Uninitialised ->
@@ -60,7 +60,7 @@ updateCommand cmd service =
             HasDataCommandSent data cmd
 
 
-getCommand : Service data cmd -> Maybe cmd
+getCommand : RemoteService data cmd -> Maybe cmd
 getCommand service =
     case service of
         Uninitialised ->
@@ -76,7 +76,7 @@ getCommand service =
             Just command
 
 
-getData : Service data cmd -> Maybe data
+getData : RemoteService data cmd -> Maybe data
 getData service =
     case service of
         Uninitialised ->

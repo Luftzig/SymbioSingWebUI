@@ -12,6 +12,7 @@ import Element.Region as Region
 import Html
 import Html.Attributes
 import Html.Events
+import Images
 import Json.Decode
 import Maybe.Extra
 
@@ -236,6 +237,8 @@ releaseButton onMouseDown onMouseUp =
 stopButton onMouseDown onMouseUp =
     clickAndHoldButton onMouseDown onMouseUp stopIcon "Stop"
 
+actuateButton onMouseDown onMouseUp =
+    clickAndHoldButton onMouseDown onMouseUp (Images.svgElement 32 [] Images.actuateIcon) "Actuate"
 
 externalClass : String -> Element.Attribute msg
 externalClass class =

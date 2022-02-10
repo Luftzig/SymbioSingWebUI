@@ -15,7 +15,7 @@ import Extra.Dict as Dict
 import Extra.TypedTime as TypedTime exposing (TypedTime)
 import File exposing (File)
 import File.Select
-import FlowIO exposing (DeviceId, FlowIOCommand, FlowIODevice, encodeCommand)
+import FlowIO exposing (Command, Device, DeviceId, encodeCommand, translateActionInCommand)
 import Html.Attributes
 import Images
 import Json.Decode as JD
@@ -32,7 +32,7 @@ type alias Model =
     { availableParts : Dict String Instructions
     , sequence : List ( String, Instructions )
     , roleAssignments : Dict RoleName (Set DeviceId)
-    , availableDevices : Array FlowIODevice
+    , availableDevices : Array Device
     , instructionsStorage : Set String
     , dialog : DialogStatus
     , showPartDetails : Dict String Collapsable
@@ -64,7 +64,7 @@ type DialogStatus
 
 type alias CommandsEntry =
     { startTime : TypedTime
-    , commands : List { deviceId : DeviceId, deviceIndex : Int, command : FlowIOCommand }
+    , commands : List { device : Device, deviceIndex : Int, command : Command }
     }
 
 
@@ -104,7 +104,7 @@ type Msg
     | RemoveFromSequence Int
     | MovePart Int MoveDirection
     | RoleClicked String
-    | DeviceAssignmentChanged String FlowIODevice Bool
+    | DeviceAssignmentChanged String Device Bool
     | PlaySequenceRequested
     | PlaySequenceStarted (List CommandsEntry) Posix
     | PlaySequenceStopped
@@ -123,7 +123,7 @@ type MoveDirection
 
 
 type IncomingMsg
-    = DevicesChanged (Array FlowIODevice)
+    = DevicesChanged (Array Device)
     | ReceivedNewPart String Instructions
     | BackdropClicked
 
@@ -177,7 +177,7 @@ update msg model =
 
         LoadFromStorageRequested ->
             --( { model | dialog = LoadFromStorageDialog }, ShowDialog, Cmd.none )
-            (model, LogError "Loading schedule from local storage not supported yet", Cmd.none)
+            ( model, LogError "Loading schedule from local storage not supported yet", Cmd.none )
 
         LoadFromStorage key ->
             ( model, NoMessage, LocalStorage.load key )
@@ -207,10 +207,10 @@ update msg model =
             ( { model | dialog = SaveSequenceDialog "" }, ShowDialog, Cmd.none )
 
         DownloadSequence ->
-            ( model, LogError "Download sequence not supported yet", Cmd.none)
+            ( model, LogError "Download sequence not supported yet", Cmd.none )
 
         RequestSequenceUpload ->
-            ( model, LogError "Uploading sequences not supported yet", Cmd.none)
+            ( model, LogError "Uploading sequences not supported yet", Cmd.none )
 
         CloseDialog ->
             ( { model | dialog = NoDialog }, HideDialog, Cmd.none )
@@ -350,10 +350,10 @@ update msg model =
                     , { instructions | time = updatedTime }
                     )
 
-                toCommandsWithRoles : Instructions -> List ( TypedTime, List ( RoleName, FlowIOCommand ) )
+                toCommandsWithRoles : Instructions -> List ( TypedTime, List ( RoleName, Command ) )
                 toCommandsWithRoles instructions =
                     let
-                        transpose : Dict RoleName (Array FlowIOCommand) -> List (List ( RoleName, FlowIOCommand ))
+                        transpose : Dict RoleName (Array Command) -> List (List ( RoleName, Command ))
                         transpose dict =
                             dict
                                 |> Dict.map (\k arr -> arr |> Array.map (\c -> ( k, c )) |> Array.toList)
@@ -362,15 +362,15 @@ update msg model =
                     List.zip (instructions.time |> Array.toList)
                         (instructions.instructions |> transpose)
 
-                toCommandsWithDevice : ( TypedTime, List ( RoleName, FlowIOCommand ) ) -> CommandsEntry
+                toCommandsWithDevice : ( TypedTime, List ( RoleName, Command ) ) -> CommandsEntry
                 toCommandsWithDevice ( t, roleCommands ) =
                     { startTime = t
                     , commands = List.concatMap mapDevices roleCommands
                     }
 
                 mapDevices :
-                    ( RoleName, FlowIOCommand )
-                    -> List { deviceId : DeviceId, deviceIndex : Int, command : FlowIOCommand }
+                    ( RoleName, Command )
+                    -> List { device : Device, deviceIndex : Int, command : Command }
                 mapDevices ( roleName, flowIOCommand ) =
                     let
                         assignedDevices =
@@ -378,11 +378,12 @@ update msg model =
                                 |> Dict.get roleName
                                 |> Maybe.withDefault Set.empty
 
-                        getDeviceIndex : DeviceId -> Maybe Int
-                        getDeviceIndex deviceId =
+                        getDeviceAndIndex : DeviceId -> Maybe ( Int, Device )
+                        getDeviceAndIndex deviceId =
                             devices
-                                |> List.findIndex
-                                    (\device ->
+                                |> List.indexedMap Tuple.pair
+                                |> List.find
+                                    (\( _, device ) ->
                                         device.details
                                             |> Maybe.map .id
                                             |> (==) (Just deviceId)
@@ -393,10 +394,10 @@ update msg model =
                                 |> Set.toList
                                 |> List.filterMap
                                     (\deviceId ->
-                                        getDeviceIndex deviceId
+                                        getDeviceAndIndex deviceId
                                             |> Maybe.map
-                                                (\index ->
-                                                    { deviceId = deviceId, deviceIndex = index, command = flowIOCommand }
+                                                (\( index, device ) ->
+                                                    { device = device, deviceIndex = index, command = flowIOCommand }
                                                 )
                                     )
                     in
@@ -439,11 +440,11 @@ update msg model =
                                     else
                                         ( runState.nextCommands, Cmd.none )
 
-                                toCmd : { a | deviceIndex : Int, command : FlowIOCommand } -> Cmd msg
+                                toCmd : { a | device : Device, deviceIndex : Int, command : Command } -> Cmd msg
                                 toCmd e =
                                     FlowIO.sendCommand
                                         { deviceIndex = e.deviceIndex
-                                        , command = encodeCommand e.command
+                                        , command = encodeCommand <| translateActionInCommand e.device e.command
                                         }
 
                                 newState =
@@ -795,7 +796,7 @@ viewDialog model =
                 isAssigned device =
                     Set.member (getId device) assignments
 
-                displayDeviceCheckbox : FlowIODevice -> Element Msg
+                displayDeviceCheckbox : Device -> Element Msg
                 displayDeviceCheckbox device =
                     row [ fullWidth, spacing 10 ]
                         [ checkbox []

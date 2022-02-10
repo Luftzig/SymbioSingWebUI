@@ -18,25 +18,25 @@ import Element.Region as UIRegion
 import Extra.RemoteService as RemoteService
 import FlowIO exposing (..)
 import Html
-import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configRegulatedPressureIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
+import Images exposing (configGeneralIcon, configInflateParallelIcon, configInflateSeriesIcon, configRegulatedPressureIcon, configRegulatedVacuumIcon, configVacuumParallelIcon, configVacuumSeriesIcon)
 import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
 import LocalStorage
 import Scheduler exposing (IncomingMsg(..))
 import Sensors
 import Set exposing (Set)
-import Styles exposing (borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, elementColorToColor, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, tabStyle, vacuumButton)
+import Styles exposing (actuateButton, borderWhite, bottomBorder, buttonCssIcon, colorToCssString, darkGrey, elementColorToColor, fullWidth, grey, inflateButton, palette, releaseButton, rightBorder, rust, stopButton, tabStyle, vacuumButton)
 import Task
 import Time
 
 
 type alias Model =
-    { devices : Array FlowIODevice
-    , listeners : List { deviceIndex : Int, to : FlowIOService, shouldListen : Bool }
+    { devices : Array Device
+    , listeners : List { deviceIndex : Int, to : Service, shouldListen : Bool }
     , scheduler : Scheduler.Model
-    , commandClicked : Maybe { deviceIndex : Int, action : FlowIOAction }
+    , commandClicked : Maybe { deviceIndex : Int, action : Action }
     , servicesPanel :
-        { services : List ( Int, FlowIOService )
+        { services : List ( Int, Service )
         , panelState : PanelState
         }
     , openTab : MainTab
@@ -93,18 +93,18 @@ type Msg
     | RequestControlServiceUpdates Int
     | DisconnectDevice Int
     | ControlServiceUpdate { deviceIndex : Int, status : Value }
-    | SendCommand Int FlowIOCommand
+    | SendCommand Int Command
     | ChangeCommandPortState Int FlowIO.Port FlowIO.PortState
     | ChangeCommandPwm Int Int
-    | ActionClicked Int FlowIOAction
+    | ActionClicked Int Action
     | ActionReleased
     | SchedulerMessage Scheduler.Msg
     | DeviceConfigurationChanged { deviceIndex : Int, configuration : Maybe Configuration }
     | RequestDeviceConfiguration Int
     | SetDeviceConfiguration Int Configuration
     | ToggleServicePanelState
-    | AddServiceToPanel Int FlowIOService
-    | RemoveServiceFromPanel Int FlowIOService
+    | AddServiceToPanel Int Service
+    | RemoveServiceFromPanel Int Service
     | DevicePowerOffStatusChange Int PowerOffStatus
     | SendNewPowerOffStatus Int PowerOffStatus
     | SensorReadingReceived Int (Result Json.Decode.Error AnalogReadings)
@@ -218,7 +218,7 @@ subscriptions model =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        updateDevices : Array FlowIODevice -> Model -> Model
+        updateDevices : Array Device -> Model -> Model
         updateDevices newDevices model_ =
             let
                 scheduler =
@@ -232,7 +232,7 @@ update msg model =
             in
             { model_ | devices = newDevices, scheduler = newScheduler, sequencerData = sequencerModel.sequencerData }
 
-        updateDevice : Int -> (FlowIODevice -> FlowIODevice) -> Array FlowIODevice
+        updateDevice : Int -> (Device -> Device) -> Array Device
         updateDevice index updater =
             Array.Extra.update index updater model.devices
 
@@ -456,12 +456,31 @@ update msg model =
             ( logError "Removing devices is not supported at the moment", Cmd.none )
 
         SendCommand deviceIndex command ->
-            -- TODO: Maybe we should update the model to reflect that?
-            ( model, sendCommand { deviceIndex = deviceIndex, command = encodeCommand command } )
+            let
+                device =
+                    model.devices |> Array.get deviceIndex
+
+                newCommand =
+                    device
+                        |> Maybe.map
+                            (\dev ->
+                                { command | action = translateAction dev command.action }
+                            )
+            in
+            case newCommand of
+                Just cmd ->
+                    ( model
+                    , sendCommand { deviceIndex = deviceIndex, command = encodeCommand cmd }
+                    )
+
+                Nothing ->
+                    ( logError ("Trying to send command to device " ++ String.fromInt deviceIndex ++ " but there is no such device")
+                    , Cmd.none
+                    )
 
         ChangeCommandPortState deviceIndex port_ portState ->
             let
-                command : FlowIOCommand
+                command : Command
                 command =
                     Array.get deviceIndex model.devices
                         |> Maybe.andThen getLastCommand
@@ -475,7 +494,7 @@ update msg model =
 
         ChangeCommandPwm deviceIndex newValue ->
             let
-                command : FlowIOCommand
+                command : Command
                 command =
                     Array.get deviceIndex model.devices
                         |> Maybe.andThen getLastCommand
@@ -500,7 +519,7 @@ update msg model =
 
         ActionClicked deviceIndex action ->
             let
-                command : FlowIOCommand
+                command : Command
                 command =
                     Array.get deviceIndex model.devices
                         |> Maybe.andThen getLastCommand
@@ -800,7 +819,7 @@ tabs { scheduler, sensorData, composerData, openTab, windowSize, servicesPanel, 
 displayDeviceList : Model -> El.Element Msg
 displayDeviceList model =
     let
-        showDevice : Int -> FlowIODevice -> El.Element Msg
+        showDevice : Int -> Device -> El.Element Msg
         showDevice index device =
             El.row [ bottomBorder, El.width El.fill, El.spacing 5, El.paddingXY 0 4 ]
                 [ El.el [] <| El.text (String.fromInt (index + 1) ++ ": ")
@@ -934,7 +953,7 @@ type AnalogServiceCommands
 displayServices : Model -> El.Element Msg
 displayServices { devices, servicesPanel } =
     let
-        serviceWrapper : Int -> FlowIODevice -> FlowIOService -> El.Element Msg -> El.Element Msg
+        serviceWrapper : Int -> Device -> Service -> El.Element Msg -> El.Element Msg
         serviceWrapper index device service content =
             let
                 serviceTitle =
@@ -960,7 +979,7 @@ displayServices { devices, servicesPanel } =
                 , content
                 ]
 
-        displayControlService : Int -> FlowIODevice -> El.Element Msg
+        displayControlService : Int -> Device -> El.Element Msg
         displayControlService index device =
             case ( device.status, device.controlServiceStatus ) of
                 ( Connected, Just hardwareStatus ) ->
@@ -978,7 +997,7 @@ displayServices { devices, servicesPanel } =
                 _ ->
                     El.none
 
-        displayControls : Int -> Maybe Configuration -> FlowIOCommand -> El.Element Msg
+        displayControls : Int -> Maybe Configuration -> Command -> El.Element Msg
         displayControls deviceIndex configuration command =
             let
                 pwmControl =
@@ -1053,11 +1072,12 @@ displayServices { devices, servicesPanel } =
                 , value = filled
                 }
 
-        actions : (FlowIOAction -> Msg) -> FlowIOAction -> El.Element Msg
+        actions : (Action -> Msg) -> Action -> El.Element Msg
         actions onMouseDown _ =
             El.row [ El.spacing 5, El.padding 5 ]
                 [ inflateButton (onMouseDown Inflate) ActionReleased
                 , vacuumButton (onMouseDown Vacuum) ActionReleased
+                , actuateButton (onMouseDown Actuate) ActionReleased
                 , releaseButton (onMouseDown Release) ActionReleased
                 , stopButton (onMouseDown Stop) ActionReleased
                 ]
@@ -1149,7 +1169,7 @@ displayServices { devices, servicesPanel } =
                     ]
                 ]
 
-        displayConfigService : Int -> FlowIODevice -> El.Element Msg
+        displayConfigService : Int -> Device -> El.Element Msg
         displayConfigService index device =
             let
                 configIcon : (El.Color -> Html.Html msg) -> UIInput.OptionState -> El.Element msg
@@ -1190,14 +1210,15 @@ displayServices { devices, servicesPanel } =
                     , UIInput.optionWith VacuumSeries (configIcon configVacuumSeriesIcon)
                     , UIInput.optionWith VacuumParallel (configIcon configVacuumParallelIcon)
                     , UIInput.optionWith RegulatedPressure (configIcon configRegulatedPressureIcon)
+                    , UIInput.optionWith RegulatedVacuum (configIcon configRegulatedVacuumIcon)
                     ]
                 }
 
-        displayBatteryService : Int -> FlowIODevice -> El.Element Msg
+        displayBatteryService : Int -> Device -> El.Element Msg
         displayBatteryService _ _ =
             El.none
 
-        displayPowerOffService : Int -> FlowIODevice -> El.Element Msg
+        displayPowerOffService : Int -> Device -> El.Element Msg
         displayPowerOffService index device =
             let
                 statusToOption =
@@ -1276,7 +1297,7 @@ displayServices { devices, servicesPanel } =
             in
             selector
 
-        displayAnalogService : Int -> FlowIODevice -> El.Element Msg
+        displayAnalogService : Int -> Device -> El.Element Msg
         displayAnalogService deviceIndex device =
             let
                 currentSelectedCommand : Maybe AnalogServiceCommands
@@ -1404,7 +1425,7 @@ displayServices { devices, servicesPanel } =
                             }
                         ]
 
-        displayServicePanel : Int -> FlowIOService -> El.Element Msg
+        displayServicePanel : Int -> Service -> El.Element Msg
         displayServicePanel deviceIndex service =
             let
                 maybeDevice =

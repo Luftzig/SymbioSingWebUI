@@ -8,7 +8,7 @@ import FlowIO
 import Html
 import Material.Icons
 import Material.Icons.Types as Material exposing (Coloring(..))
-import Svg exposing (..)
+import Svg exposing (Svg, circle, defs, ellipse, g, rect, svg)
 import Svg.Attributes exposing (..)
 
 
@@ -149,6 +149,10 @@ tubes configuration =
         FlowIO.RegulatedPressure ->
             [ tubeInlet, tubeSeries ]
 
+        FlowIO.RegulatedVacuum ->
+            [ tubeOutlet, tubeSeries ]
+
+
 
 deviceBox : FlowIO.ControlServiceStatus -> FlowIO.Configuration -> Svg msg
 deviceBox { pump1, pump2, inlet, outlet, port1, port2, port3, port4, port5 } config =
@@ -264,7 +268,18 @@ configVacuumParallelIcon color =
         [ Svg.path [ d "M256 662l68-82M250 663l-68-81M253 654V240" ] [], circle [ transform "translate(199 429)", r "52.9", cx "52.9", cy "52.9" ] [], Svg.path [ d "M471 664l68-81M465 665l-68-81M468 657V255" ] [], Svg.path [ d "M187 59h346c24 0 43 9 43 21v166c0 11-19 20-43 20H187c-24 0-43-9-43-20V80c0-12 19-21 43-21z" ] [], circle [ transform "translate(415 429)", cx "52.9", cy "52.9", r "52.9" ] [] ]
 
 configRegulatedPressureIcon color =
-    Material.Icons.fire_extinguisher 32 (Material.Color <| elementColorToColor color)
+    let
+        color_ =
+            Color.toCssString <| elementColorToColor color
+    in
+    svg [ fill color_, stroke color_, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36", version "1.1", id "svg5320"] [ defs [ id "defs5324" ] [], Svg.path [ d "m 337.91101,363.75847 -72.14407,-81.02542 1.72882,126.63559 133.65253,-0.37289 m -133.65253,-126.2627 -71.58474,81.02542", id "path5312", style "fill:none;stroke-linejoin:round;stroke-opacity:1" ] [], Svg.path [ d "m 187,59 h 346 c 24,0 43,9 43,21 v 166 c 0,11 -19,20 -43,20 H 187 c -24,0 -43,-9 -43,-20 V 80 c 0,-12 19,-21 43,-21 z", id "path5314", style "stroke-opacity:1" ] [], Svg.path [ style "stroke-width:36;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:2;stroke-opacity:1", d "m 421.01695,360 h 81.35593 v 80.84746 l 80.33898,82.37288 V 675.76272 H 338.64407 V 523.22034 L 420,440.84746 Z", id "path13029" ] [] ]
+
+configRegulatedVacuumIcon color =
+    let
+        color_ =
+            Color.toCssString <| elementColorToColor color
+    in
+    svg [ fill color_, stroke color_, viewBox "0 0 720 720", strokeLinecap "round", strokeWidth "36", version "1.1", id "svg5320" ] [ defs [ id "defs5324" ] [], Svg.path [ d "m 303.70339,320.39831 81.02542,72.14407 -178.5,1.32203 0.37289,-130.60169 m 178.12711,130.60169 -81.02542,68.5339", id "path5312", style "fill:none;stroke-linejoin:round;stroke-opacity:1" ] [], Svg.path [ d "m 187,59 h 346 c 24,0 43,9 43,21 v 166 c 0,11 -19,20 -43,20 H 187 c -24,0 -43,-9 -43,-20 V 80 c 0,-12 19,-21 43,-21 z", id "path5314", style "stroke-opacity:1" ] [], Svg.path [ style "stroke-width:36;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:2;stroke-opacity:1", d "m 421.01695,360 h 81.35593 v 80.84746 l 80.33898,82.37288 V 675.76272 H 338.64407 V 523.22034 L 420,440.84746 Z", id "path13029" ] [] ]
 
 bodyImage : Maybe { sensor1 : { fill : String, width : Float } } -> Html.Html msg
 bodyImage data =
@@ -319,6 +334,11 @@ lightBlue =
 midnightBlue =
     Color.rgb255 0x00 0x00 0x80
 
+inflateIcon =
+    svg [ viewBox "0 0 720 720" ] [ g [ fill "none", stroke "#26ce00", strokeWidth "36", strokeLinecap "round" ] [ Svg.path [ strokeLinejoin "bevel", d "M187.2 59h345.6c23.859 0 43.2 19.341 43.2 43.2v345.6c0 23.859-19.341 43.2-43.2 43.2H187.2c-23.859 0-43.2-19.341-43.2-43.2V102.2c0-23.859 19.341-43.2 43.2-43.2z" ] [], Svg.path [ strokeMiterlimit "2", d "M360.72 273.84v377.04M359.908 276.63l-72.056 86.66M361.94 276.341l71.287 85.734" ] [] ] ]
+
+actuateIcon =
+    svg [ viewBox "0 0 760 760", version "1.1", id "svg85" ] [ defs [ id "defs89" ] [], g [ fill "none", stroke "#26ce00", strokeWidth "36", strokeLinecap "round", id "g83" ] [ Svg.path [ strokeLinejoin "bevel", d "m 187.2,59 h 345.6 c 23.859,0 43.2,19.341 43.2,43.2 v 345.6 c 0,23.859 -19.341,43.2 -43.2,43.2 H 187.2 C 163.341,491 144,471.659 144,447.8 V 102.2 C 144,78.341 163.341,59 187.2,59 Z", id "path79", style "stroke:#26ce00" ] [], Svg.path [ strokeMiterlimit "2", d "M 362.85834,447.73831 V 650.88 m 72.028,-86.53 -72.056,86.66 m -71.615,-86.197 71.286,85.734", id "path81", style "stroke:#26ce00" ] [] ], Svg.path [ strokeMiterlimit "2", d "M 359.8075,345.70365 V 209.6806 m 72.028,86.53 -72.056,-86.66 m -71.615,86.197 71.286,-85.734", id "path81-9", style "stroke:#26ce00;stroke-width:36;stroke-linecap:round;stroke-miterlimit:2;stroke-dasharray:none" ] [], Svg.path [ style "stroke:#26ce00;stroke-width:36;stroke-linecap:round;stroke-miterlimit:2;stroke-dasharray:none", d "M 448.47458,347.79661 271.52542,436.27118", id "path5844" ] [] ]
 
 elementColorToColor : Element.Color -> Color
 elementColorToColor elColor =

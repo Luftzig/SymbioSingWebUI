@@ -563,9 +563,9 @@ firstline@^1.2.0:
   resolved "https://registry.yarnpkg.com/firstline/-/firstline-1.3.1.tgz#59e84af0fd858fbc6dac0a0ff97fd22a47e58084"
   integrity sha512-ycwgqtoxujz1dm0kjkBFOPQMESxB9uKc/PlD951dQDIG+tBXRpYZC2UmJb0gDxopQ1ZX6oyRQN3goRczYu7Deg==
 
-"flow-io-web-lib@git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#4032b2722f579a3e16d96e354e15c46651b2a0f1":
+"flow-io-web-lib@git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#bdf18d5e93007e819ba8dd2d79b1170f3c84b9f7":
   version "1.0.0"
-  resolved "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#4032b2722f579a3e16d96e354e15c46651b2a0f1"
+  resolved "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#bdf18d5e93007e819ba8dd2d79b1170f3c84b9f7"
   dependencies:
     global "^4.4.0"
 

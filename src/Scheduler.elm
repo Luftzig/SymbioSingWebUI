@@ -1,4 +1,19 @@
-module Scheduler exposing (Effect(..), IncomingMsg(..), Instructions, Model, Msg(..), RoleName, RolesInstructions, encodeInstructions, initModel, instructionsDecoder, send, subscriptions, update, view)
+module Scheduler exposing
+    ( Effect(..)
+    , IncomingMsg(..)
+    , Instructions
+    , Model
+    , Msg(..)
+    , RoleName
+    , RolesInstructions
+    , encodeInstructions
+    , initModel
+    , instructionsDecoder
+    , send
+    , subscriptions
+    , update
+    , view
+    )
 
 import Array exposing (Array)
 import Array.Extra as AE
@@ -19,6 +34,7 @@ import File.Download
 import File.Select
 import FlowIO exposing (..)
 import Html.Attributes
+import Images exposing (actuateIcon)
 import Json.Decode as JD
 import Json.Encode as JE
 import Styles exposing (buttonPadding, externalClass, fullWidth, inflateIcon, releaseIcon, stopIcon, textField, vacuumIcon)
@@ -37,7 +53,7 @@ type alias RoleName =
 
 
 type alias RolesInstructions =
-    Dict RoleName (Array FlowIOCommand)
+    Dict RoleName (Array Command)
 
 
 type alias Instructions =
@@ -59,7 +75,7 @@ type RoleDeviceSelectState
 type alias Model =
     { state : SchedulerState
     , instructions : Instructions
-    , devices : Array FlowIODevice
+    , devices : Array Device
 
     -- roles are abstract names for devices
     , roles : Array RoleName
@@ -148,7 +164,7 @@ cellHeight =
     El.height <| El.px 42
 
 
-actionSelection : FlowIOCommand -> (FlowIOAction -> msg) -> El.Element msg
+actionSelection : Command -> (Action -> msg) -> El.Element msg
 actionSelection command onChange =
     let
         renderOption : El.Element msg -> Element.Input.OptionState -> El.Element msg
@@ -196,12 +212,13 @@ actionSelection command onChange =
         [ Styles.fontSize.small
         , El.htmlAttribute <| Html.Attributes.style "flex-wrap" "wrap"
         , cellHeight
-        , El.width <| El.minimum (34 * 4) <| El.fillPortion 3
+        , El.width <| El.minimum (34 * 5) <| El.fillPortion 3
         , El.centerY
         ]
         { options =
             [ Element.Input.optionWith Inflate <| renderOption inflateIcon
             , Element.Input.optionWith Vacuum <| renderOption vacuumIcon
+            , Element.Input.optionWith Actuate <| renderOption (Images.svgElement 32 [] actuateIcon)
             , Element.Input.optionWith Release <| renderOption releaseIcon
             , Element.Input.optionWith Stop <| renderOption stopIcon
             ]
@@ -211,7 +228,7 @@ actionSelection command onChange =
         }
 
 
-pwmControl : FlowIOCommand -> Bool -> String -> (String -> Msg) -> El.Element Msg
+pwmControl : Command -> Bool -> String -> (String -> Msg) -> El.Element Msg
 pwmControl inst isDisabled label onChange =
     let
         numberAttrs =
@@ -232,7 +249,7 @@ pwmControl inst isDisabled label onChange =
         }
 
 
-portsSelection : FlowIOCommand -> (Port -> Bool -> msg) -> El.Element msg
+portsSelection : Command -> (Port -> Bool -> msg) -> El.Element msg
 portsSelection inst onPortChange =
     let
         checkBox checked =
@@ -301,7 +318,7 @@ portsSelection inst onPortChange =
         ]
 
 
-schedulerControls : RoleName -> SchedulerState -> Int -> FlowIOCommand -> El.Element Msg
+schedulerControls : RoleName -> SchedulerState -> Int -> Command -> El.Element Msg
 schedulerControls role state rowIndex command =
     let
         currentlyRunningRow =
@@ -367,7 +384,7 @@ schedulerRow role state index row =
 
 
 type SchedulerRow
-    = ExistingInstruction TypedTime (Dict RoleName FlowIOCommand)
+    = ExistingInstruction TypedTime (Dict RoleName Command)
     | PlannedInstruction
     | TooManyInstructions TypedTime Int
 
@@ -375,7 +392,7 @@ type SchedulerRow
 devicesTable : Model -> El.Element Msg
 devicesTable model =
     let
-        instructionsAt : Int -> RolesInstructions -> Dict RoleName FlowIOCommand
+        instructionsAt : Int -> RolesInstructions -> Dict RoleName Command
         instructionsAt index rolesInstructions =
             rolesInstructions
                 |> Dict.map
@@ -733,7 +750,7 @@ type Msg
     | DeleteLastInstruction
     | ResetInstructions
     | InstructionTimeChanged Int String
-    | ActionChanged RoleName Int FlowIOAction
+    | ActionChanged RoleName Int Action
     | PWMChanged RoleName Int String
     | PortStateChanged RoleName Int Port Bool
     | RunInstructions
@@ -780,7 +797,7 @@ createNewInstruction _ { time, instructions } =
                 |> List.maximum
                 |> Maybe.withDefault -1
 
-        commandStop : FlowIOCommand
+        commandStop : Command
         commandStop =
             { defaultCommand
                 | action = Stop
@@ -822,12 +839,12 @@ update msg model =
         updateInstructionForRole :
             Int
             -> RoleName
-            -> (FlowIOCommand -> FlowIOCommand)
+            -> (Command -> Command)
             -> Instructions
             -> Instructions
         updateInstructionForRole index role updater instructions =
             let
-                updateCommands : Maybe (Array FlowIOCommand) -> Maybe (Array FlowIOCommand)
+                updateCommands : Maybe (Array Command) -> Maybe (Array Command)
                 updateCommands =
                     Maybe.map (\commands -> AE.update index updater commands)
             in
@@ -913,10 +930,10 @@ update msg model =
                     else
                         ( model, NoEffect, Cmd.none )
 
-        ActionChanged role index flowIOAction ->
+        ActionChanged role index action ->
             ( { model
                 | instructions =
-                    updateInstructionForRole index role (\inst -> { inst | action = flowIOAction }) model.instructions
+                    updateInstructionForRole index role (\inst -> { inst | action = action }) model.instructions
               }
             , NoEffect
             , Cmd.none
@@ -1122,14 +1139,14 @@ update msg model =
                                     instructions =
                                         model.instructions.instructions
 
-                                    deviceIdToIdx : Dict DeviceId Int
+                                    deviceIdToIdx : Dict DeviceId (Int, Device)
                                     deviceIdToIdx =
                                         model.devices
                                             |> Array.toIndexedList
                                             |> List.filterMap
                                                 (\( idx, device ) ->
                                                     device.details
-                                                        |> Maybe.map (\details -> ( details.id, idx ))
+                                                        |> Maybe.map (\details -> ( details.id, (idx, device) ))
                                                 )
                                             |> Dict.fromList
 
@@ -1138,7 +1155,7 @@ update msg model =
                                         Dict.get role model.roleDeviceMapping
                                             |> Maybe.map (\deviceId -> ( deviceId, commandsArray ))
 
-                                    mapDeviceIdToDeviceIndex : ( DeviceId, b ) -> Maybe ( Int, b )
+                                    mapDeviceIdToDeviceIndex : ( DeviceId, b ) -> Maybe ( (Int, Device), b )
                                     mapDeviceIdToDeviceIndex ( deviceId, commandsArray ) =
                                         Dict.get deviceId deviceIdToIdx
                                             |> Maybe.map (\idx -> ( idx, commandsArray ))
@@ -1149,12 +1166,12 @@ update msg model =
                                             commandsArray
                                             |> Maybe.map (\cmd -> ( deviceIdx, cmd ))
 
-                                    createCommand : ( Int, FlowIOCommand ) -> Cmd msg
-                                    createCommand ( deviceIdx, command ) =
+                                    createCommand : ( (Int, Device), Command ) -> Cmd msg
+                                    createCommand ( (deviceIdx, device), command ) =
                                         sendCommand
                                             { deviceIndex = deviceIdx
                                             , command =
-                                                encodeCommand command
+                                                encodeCommand <| translateActionInCommand device command
                                             }
 
                                     commands : List (Cmd Msg)

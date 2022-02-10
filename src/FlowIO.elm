@@ -1,20 +1,20 @@
 port module FlowIO exposing
-    ( AnalogReadings
+    ( Action(..)
+    , AnalogReadings
     , AnalogService
     , AnalogServiceRequest(..)
+    , Command
     , Configuration(..)
     , ControlServiceStatus
+    , Device
     , DeviceDetails
     , DeviceId
-    , FlowIOAction(..)
-    , FlowIOCommand
-    , FlowIODevice
-    , FlowIOService(..)
-    , FlowIOStatus(..)
     , Port(..)
     , PortState(..)
     , PortsState
     , PowerOffStatus(..)
+    , Service(..)
+    , Status(..)
     , commandActionDecoder
     , connectToDevice
     , controlCommandDecoder
@@ -58,11 +58,12 @@ port module FlowIO exposing
     , setPowerOffStatus
     , setPumpPwm
     , setStatusTo
+    , translateAction
     , updateCommandFromStatus
-    )
+    , translateActionInCommand)
 
 import Array exposing (Array)
-import Extra.RemoteService as RemoteService exposing (Service, updateCommand, updateData)
+import Extra.RemoteService as RemoteService exposing (RemoteService, updateCommand, updateData)
 import Json.Decode as JD
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE
@@ -164,8 +165,8 @@ sendPowerOffStatus index status =
 -}
 
 
-type alias FlowIODevice =
-    { status : FlowIOStatus
+type alias Device =
+    { status : Status
     , details : Maybe DeviceDetails
     , controlServiceStatus : Maybe ControlServiceStatus
     , powerOffServiceStatus : Maybe PowerOffStatus
@@ -179,16 +180,16 @@ type alias DeviceId =
 
 
 type alias DeviceDetails =
-    { name : String, id : DeviceId, services : List FlowIOService }
+    { name : String, id : DeviceId, services : List Service }
 
 
-type FlowIOStatus
+type Status
     = NotConnected
     | Pending
     | Connected
 
 
-type FlowIOService
+type Service
     = ControlService
     | ConfigService
     | BatteryService
@@ -204,7 +205,7 @@ type PowerOffStatus
     | PowerOffStatusUnknown
 
 
-serviceToString : FlowIOService -> String
+serviceToString : Service -> String
 serviceToString service =
     case service of
         ControlService ->
@@ -226,7 +227,7 @@ serviceToString service =
             "analog-service"
 
 
-serviceToPrettyName : FlowIOService -> String
+serviceToPrettyName : Service -> String
 serviceToPrettyName service =
     case service of
         ControlService ->
@@ -248,7 +249,7 @@ serviceToPrettyName service =
             "Sensors"
 
 
-serviceFromString : String -> FlowIOService
+serviceFromString : String -> Service
 serviceFromString string =
     case string of
         "control-service" ->
@@ -281,7 +282,7 @@ type alias ControlServiceStatus =
     , port4 : Bool
     , port5 : Bool
     , active : Bool
-    , command : FlowIOCommand
+    , command : Command
     }
 
 
@@ -292,13 +293,14 @@ type Configuration
     | VacuumSeries
     | VacuumParallel
     | RegulatedPressure
+    | RegulatedVacuum
 
 
 
 -- FlowIODevice setters
 
 
-defaultDevice : FlowIODevice
+defaultDevice : Device
 defaultDevice =
     { status = NotConnected
     , details = Nothing
@@ -309,22 +311,22 @@ defaultDevice =
     }
 
 
-setStatusTo : FlowIOStatus -> FlowIODevice -> FlowIODevice
+setStatusTo : Status -> Device -> Device
 setStatusTo status device =
     { device | status = status }
 
 
-setDetailsTo : Maybe DeviceDetails -> FlowIODevice -> FlowIODevice
+setDetailsTo : Maybe DeviceDetails -> Device -> Device
 setDetailsTo maybeDeviceDetails flowIODevice =
     { flowIODevice | details = maybeDeviceDetails }
 
 
-setControlServiceStatusTo : ControlServiceStatus -> FlowIODevice -> FlowIODevice
+setControlServiceStatusTo : ControlServiceStatus -> Device -> Device
 setControlServiceStatusTo newStatus device =
     { device | controlServiceStatus = Just newStatus }
 
 
-defaultCommand : FlowIOCommand
+defaultCommand : Command
 defaultCommand =
     { action = Inflate
     , ports = { port1 = PortClosed, port2 = PortClosed, port3 = PortClosed, port4 = PortClosed, port5 = PortClosed }
@@ -332,17 +334,17 @@ defaultCommand =
     }
 
 
-getLastCommand : FlowIODevice -> Maybe FlowIOCommand
+getLastCommand : Device -> Maybe Command
 getLastCommand device =
     Maybe.map .command device.controlServiceStatus
 
 
-setLastCommand : FlowIOCommand -> FlowIODevice -> FlowIODevice
+setLastCommand : Command -> Device -> Device
 setLastCommand command device =
     { device | controlServiceStatus = Maybe.map (\control -> { control | command = command }) device.controlServiceStatus }
 
 
-updateCommandFromStatus : ControlServiceStatus -> FlowIOCommand -> FlowIOCommand
+updateCommandFromStatus : ControlServiceStatus -> Command -> Command
 updateCommandFromStatus status command =
     let
         newPorts =
@@ -375,7 +377,7 @@ portToIndex port_ =
             5
 
 
-setPort : Port -> PortState -> FlowIOCommand -> FlowIOCommand
+setPort : Port -> PortState -> Command -> Command
 setPort port_ portState command =
     let
         ports =
@@ -401,12 +403,12 @@ setPort port_ portState command =
     { command | ports = newPorts }
 
 
-setAction : FlowIOAction -> FlowIOCommand -> FlowIOCommand
+setAction : Action -> Command -> Command
 setAction action command =
     { command | action = action }
 
 
-setPumpPwm : Int -> FlowIOCommand -> FlowIOCommand
+setPumpPwm : Int -> Command -> Command
 setPumpPwm pwm command =
     if pwm >= 0 && pwm <= 0xFF then
         { command | pumpPwm = pwm }
@@ -415,12 +417,12 @@ setPumpPwm pwm command =
         Debug.log ("Got PWM value out of range " ++ Debug.toString pwm) command
 
 
-setConfiguration : Maybe Configuration -> FlowIODevice -> FlowIODevice
+setConfiguration : Maybe Configuration -> Device -> Device
 setConfiguration maybeConfiguration flowIODevice =
     { flowIODevice | configuration = maybeConfiguration }
 
 
-setPowerOffStatus : Maybe PowerOffStatus -> FlowIODevice -> FlowIODevice
+setPowerOffStatus : Maybe PowerOffStatus -> Device -> Device
 setPowerOffStatus maybePowerOffStatus flowIODevice =
     { flowIODevice | powerOffServiceStatus = maybePowerOffStatus }
 
@@ -429,11 +431,12 @@ setPowerOffStatus maybePowerOffStatus flowIODevice =
 -- Device Command Types
 
 
-type FlowIOAction
+type Action
     = Inflate
     | Vacuum
     | Release
     | Stop
+    | Actuate -- Depends on context: If using vacuum configuration then it is Vacuum, if pressure it is Inflate
 
 
 type PortState
@@ -453,8 +456,8 @@ type alias PortsState =
     { port1 : PortState, port2 : PortState, port3 : PortState, port4 : PortState, port5 : PortState }
 
 
-type alias FlowIOCommand =
-    { action : FlowIOAction, pumpPwm : Int, ports : PortsState }
+type alias Command =
+    { action : Action, pumpPwm : Int, ports : PortsState }
 
 
 
@@ -485,7 +488,7 @@ controlServiceStatusDecoder =
         |> optional "lastCommand" controlCommandDecoder defaultCommand
 
 
-commandActionDecoder : JD.Decoder FlowIOAction
+commandActionDecoder : JD.Decoder Action
 commandActionDecoder =
     JD.field "action" JD.string
         |> JD.andThen
@@ -514,6 +517,9 @@ commandActionDecoder =
 
                     "!" ->
                         JD.succeed Stop
+
+                    "actuate" ->
+                        JD.succeed Actuate
 
                     _ ->
                         JD.fail ("Expected valid action symbol ('+-^!') but found '" ++ string ++ "'")
@@ -564,7 +570,7 @@ portsDecoder =
             (JD.index 4 JD.bool)
 
 
-controlCommandDecoder : JD.Decoder FlowIOCommand
+controlCommandDecoder : JD.Decoder Command
 controlCommandDecoder =
     JD.map3 (\action pwm ports -> { action = action, pumpPwm = pwm, ports = ports })
         commandActionDecoder
@@ -592,6 +598,9 @@ configurationEncoding configuration =
 
         RegulatedPressure ->
             "REGULATED_PRESSURE"
+
+        RegulatedVacuum ->
+            "REGULATED_VACUUM"
 
 
 configurationDecoding : String -> Maybe Configuration
@@ -640,6 +649,49 @@ configurationToString configuration =
         RegulatedPressure ->
             "Regulated Pressure"
 
+        RegulatedVacuum ->
+            "Regulated Vacuum"
+
+
+translateAction : Device -> Action -> Action
+translateAction device action =
+    case action of
+        Actuate ->
+            case device.configuration of
+                Just conf ->
+                    case conf of
+                        InflationParallel ->
+                            Inflate
+
+                        InflationSeries ->
+                            Inflate
+
+                        RegulatedPressure ->
+                            Inflate
+
+                        StandardConfiguration ->
+                            Inflate
+
+                        VacuumSeries ->
+                            Vacuum
+
+                        VacuumParallel ->
+                            Vacuum
+
+                        RegulatedVacuum ->
+                            Vacuum
+
+                Nothing ->
+                    Inflate
+
+        _ ->
+            action
+
+
+translateActionInCommand : Device -> Command -> Command
+translateActionInCommand device command =
+    { command | action = translateAction device command.action }
+
 
 
 {-
@@ -676,7 +728,7 @@ powerOffStatusDecoder =
 -- Encoders
 
 
-encodeCommand : FlowIOCommand -> JE.Value
+encodeCommand : Command -> JE.Value
 encodeCommand inst =
     JE.object
         [ ( "action", encodeAction inst.action )
@@ -717,7 +769,7 @@ togglePort portState =
             PortOpen
 
 
-encodeAction : FlowIOAction -> JE.Value
+encodeAction : Action -> JE.Value
 encodeAction action =
     let
         symbol =
@@ -733,6 +785,9 @@ encodeAction action =
 
                 Stop ->
                     "stop"
+
+                Actuate ->
+                    "actuate"
     in
     JE.string symbol
 
@@ -815,19 +870,19 @@ type alias AnalogReadings =
 
 
 type alias AnalogService =
-    Service
+    RemoteService
         { lastReading : AnalogReadings
         , readingsTimestamp : Time.Posix
         }
         AnalogServiceRequest
 
 
-setAnalogServiceData : AnalogService -> FlowIODevice -> FlowIODevice
+setAnalogServiceData : AnalogService -> Device -> Device
 setAnalogServiceData newService flowIODevice =
     { flowIODevice | analogSensorsService = newService }
 
 
-setNewAnalogServiceReadings : Time.Posix -> AnalogReadings -> FlowIODevice -> FlowIODevice
+setNewAnalogServiceReadings : Time.Posix -> AnalogReadings -> Device -> Device
 setNewAnalogServiceReadings posix analogReadings device =
     let
         updatedService =
@@ -837,7 +892,7 @@ setNewAnalogServiceReadings posix analogReadings device =
     setAnalogServiceData updatedService device
 
 
-setNewAnalogReadRequest : AnalogServiceRequest -> FlowIODevice -> FlowIODevice
+setNewAnalogReadRequest : AnalogServiceRequest -> Device -> Device
 setNewAnalogReadRequest request device =
     let
         updated =

@@ -24,7 +24,7 @@ import Dict.Extra as Dict
 import Extra.Result as Result
 import Extra.TypedTime as TypedTime exposing (TypedTime)
 import Extra.Xml exposing (oneOfTags, tagPath)
-import FlowIO exposing (FlowIOAction, FlowIOCommand, PortState, portToIndex)
+import FlowIO exposing (Action, Command, PortState, portToIndex)
 import List.Extra
 import Maybe.Extra as Maybe
 import Regex
@@ -729,7 +729,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
         convertToInstructions :
             Scheduler.RoleName
             -> List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port }
-            -> Result String (Array FlowIO.FlowIOCommand)
+            -> Result String (Array FlowIO.Command)
         convertToInstructions roleName intermediatesList =
             let
                 getByPort p =
@@ -793,7 +793,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                     -> IntermediateRepr
                     -> IntermediateRepr
                     -> IntermediateRepr
-                    -> Result String FlowIO.FlowIOCommand
+                    -> Result String FlowIO.Command
                 mergePortInstructions p1 p2 p3 p4 p5 =
                     let
                         settleAction : List IntermediateRepr -> Result String IntermediateAction
@@ -847,7 +847,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                                 ( False, True ) ->
                                     Ok Release
 
-                        toFlowIOAction : IntermediateAction -> FlowIO.FlowIOAction
+                        toFlowIOAction : IntermediateAction -> FlowIO.Action
                         toFlowIOAction action =
                             case action of
                                 NoChange ->
