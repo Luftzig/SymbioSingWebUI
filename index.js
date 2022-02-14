@@ -5,6 +5,7 @@ import {FlowIo} from "flow-io-web-lib"
 import ControlService from "flow-io-web-lib/lib/services/controlService"
 import {ConfigService} from "flow-io-web-lib/lib/services/configService"
 import {PowerOffService} from "flow-io-web-lib/lib/services/powerOffService"
+import * as PeerSync from "./src/peerSync"
 
 import LocalStorage from "./src/localStorage"
 
@@ -173,6 +174,7 @@ app.ports.requestAnalogReadings_.subscribe(({deviceIndex, mode}) => {
 })
 
 
+PeerSync.wire(app)
 
 
 /*

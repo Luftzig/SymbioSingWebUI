@@ -7,6 +7,7 @@ import Extra.TypedTime exposing (TypedTime)
 import File exposing (File)
 import FlowIO exposing (Action, AnalogReadings, AnalogServiceRequest, Command, Configuration, Device, DeviceId, Port, PowerOffStatus, Service)
 import Json.Decode exposing (Value)
+import PeerSync exposing (PeerSyncCommand, PeerSyncMessage)
 import Time exposing (Posix)
 
 type MainTab
@@ -55,6 +56,9 @@ type Msg
     | SendInstructionsToSequencerRequestedFromScheduler
     | SendInstructionsToSequencerRequestedFromConverter
     | DialogBackDropClicked
+    | PeerNameChanged String
+    | SendPeerCommand PeerSyncCommand
+    | PeerMessageReceived (Result Json.Decode.Error PeerSyncMessage )
 
 -- Scheduler module
 
