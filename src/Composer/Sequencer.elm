@@ -13,7 +13,7 @@ import Array exposing (Array)
 import Color.Dracula as Dracula
 import Dict as Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, htmlAttribute, mouseOver, none, padding, paddingXY, paragraph, px, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
+import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, htmlAttribute, minimum, mouseOver, none, padding, paddingXY, paragraph, px, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
@@ -694,70 +694,75 @@ viewAvailableParts model =
 
 viewControls : Model -> Element SequencerMsg
 viewControls model =
-    row [ centerX, alignBottom ]
-        [ row [ spacing 5, width <| fillPortion 3 ] <|
-            case model.runStatus of
-                NotRunning ->
-                    [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
-                        { label = row [ spacing 5 ] [ Images.playIcon, text "Play" ]
-                        , onPress =
-                            Just <|
-                                CountdownStartRequested (TypedTime.minutes 1 |> TypedTime.divide 100 |> TypedTime.toMilliseconds)
-                        }
-                    , el [ width <| fillPortion 2 ] none
-                    ]
+    let
+        playInfoWidth =
+            width <| minimum 120 <| fillPortion 3
+    in
+    row [ centerX, alignBottom, spacing 10 ]
+        ((case model.runStatus of
+            NotRunning ->
+                [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
+                    { label = row [ spacing 5 ] [ Images.playIcon, text "Play" ]
+                    , onPress =
+                        Just <|
+                            CountdownStartRequested (TypedTime.minutes 1 |> TypedTime.divide 100 |> TypedTime.toMilliseconds)
+                    }
+                , el [ playInfoWidth ] none
+                ]
 
-                Running status ->
-                    [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
-                        { label = row [ spacing 5 ] [ Images.stopIcon, text "Stop" ]
-                        , onPress = Just PlaySequenceStopped
-                        }
-                    , el [ width <| fillPortion 2 ] <|
-                        text <|
-                            TypedTime.toFormattedString
-                                TypedTime.HoursMinutesSecondsHundredths
-                                status.elapsedTime
-                    ]
+            Running status ->
+                [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
+                    { label = row [ spacing 5 ] [ Images.stopIcon, text "Stop" ]
+                    , onPress = Just PlaySequenceStopped
+                    }
+                , el [ playInfoWidth ] <|
+                    text <|
+                        TypedTime.toFormattedString
+                            TypedTime.HoursMinutesSecondsHundredths
+                            status.elapsedTime
+                ]
 
-                Countdown { count, outOf } ->
-                    [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
-                        { label = row [ spacing 5 ] [ Images.stopIcon, text "Stop" ]
-                        , onPress = Just PlaySequenceStopped
-                        }
-                    , List.range 0 3
-                        |> List.map
-                            (\i ->
-                                el
-                                    ([ height <| px 24
-                                     , width <| px 24
-                                     , Border.rounded 12
-                                     , Border.width 1
-                                     , Border.color palette.onBackground
-                                     ]
-                                        ++ (if (count |> modBy 4) == i then
-                                                [ Border.glow palette.accent 3, Background.color palette.accent ]
+            Countdown { count, outOf } ->
+                [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
+                    { label = row [ spacing 5 ] [ Images.stopIcon, text "Stop" ]
+                    , onPress = Just PlaySequenceStopped
+                    }
+                , List.range 0 3
+                    |> List.map
+                        (\i ->
+                            el
+                                ([ height <| px 24
+                                 , width <| px 24
+                                 , Border.rounded 12
+                                 , Border.width 1
+                                 , Border.color palette.onBackground
+                                 ]
+                                    ++ (if (count |> modBy 4) == i then
+                                            [ Border.glow palette.accent 3, Background.color palette.accent ]
 
-                                            else
-                                                [ Background.color palette.primary ]
-                                           )
-                                    )
-                                    none
-                            )
-                        |> row [ width <| fillPortion 2, spaceEvenly ]
-                    ]
-        , button ((width <| fillPortion 1) :: Styles.button)
-            { label = text "Save"
-            , onPress = Just OpenSaveSequenceDialog
-            }
-        , button ((width <| fillPortion 1) :: Styles.button)
-            { label = text "Download"
-            , onPress = Just DownloadSequence
-            }
-        , button ((width <| fillPortion 1) :: Styles.button)
-            { label = text "Upload"
-            , onPress = Just RequestSequenceUpload
-            }
-        ]
+                                        else
+                                            [ Background.color palette.primary ]
+                                       )
+                                )
+                                none
+                        )
+                    |> row [ playInfoWidth, spacing 5, spaceEvenly ]
+                ]
+         )
+            ++ [ button ((width <| fillPortion 1) :: Styles.button)
+                    { label = text "Save"
+                    , onPress = Just OpenSaveSequenceDialog
+                    }
+               , button ((width <| fillPortion 1) :: Styles.button)
+                    { label = text "Download"
+                    , onPress = Just DownloadSequence
+                    }
+               , button ((width <| fillPortion 1) :: Styles.button)
+                    { label = text "Upload"
+                    , onPress = Just RequestSequenceUpload
+                    }
+               ]
+        )
 
 
 viewDialog : Model -> Element SequencerMsg

@@ -6,7 +6,7 @@ export default class SignalingChannel {
     this.socket = new io(signalingServerUrl, {
       auth: {token},
       autoConnect: false, // disables auto connection, by default the client would connect to the server as soon as the io() object is instatiated
-      reconnection: false, // disables auto reconnection, this can occur when for example the host server disconnects. When set to true, the client would keep trying to reconnect
+      reconnection: true, // disables auto reconnection, this can occur when for example the host server disconnects. When set to true, the client would keep trying to reconnect
       // for a complete list of the available options, see https://socket.io/docs/v4/client-api/#new-Manager-url-options
     });
     this.onMessage = () => {

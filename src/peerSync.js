@@ -18,10 +18,10 @@ export const wire = (elmApp) => {
       case "connect":
         if (connection == null) {
           connect(data.peerId)
-          connection.onMessage = (message) => {
+          connection.socket.on("message", (message) => {
             console.log("onMessage listener", message)
             elmApp.ports.listenToPeerSync_.send(message)
-          }
+          })
           console.debug("Connecting to signaling server")
         } else {
           console.debug("Connection already exists")
