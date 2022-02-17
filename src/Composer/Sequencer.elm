@@ -78,11 +78,6 @@ type RunStatus
     | Running { startTime : TypedTime, nextCommands : List CommandsEntry, elapsedTime : TypedTime }
 
 
-type Initiator
-    = Myself
-    | Other
-
-
 init : Model
 init =
     { availableParts = Dict.empty

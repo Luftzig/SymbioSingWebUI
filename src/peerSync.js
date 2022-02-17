@@ -1,8 +1,8 @@
 import io from "socket.io-client"
 import SignalingChannel from "./SignalingChannel"
 
-// let signalingServer = "https://webrtc-signaling-hxdip2j6ea-lz.a.run.app"
-let signalingServer = "localhost:3030"
+let signalingServer = "https://webrtc-signaling-hxdip2j6ea-lz.a.run.app"
+// let signalingServer = "localhost:3030"
 const serverToken = "SYMBIOSINGSIGNALING"
 
 let connection;
