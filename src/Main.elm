@@ -22,6 +22,7 @@ import Json.Decode exposing (Value, decodeValue)
 import List.Extra as LE
 import LocalStorage
 import Messages exposing (..)
+import PeerSync
 import Scheduler
 import Sensors
 import Set exposing (Set)
@@ -49,6 +50,9 @@ type alias Model =
     , savedSchedules : Set String
     , sequencerData : Sequencer.Model
     , dialog : DialogState
+    , peerName : String
+    , peerMessages : List String
+    , peerConnectionState : PeerSync.PeerSyncState
     }
 
 
@@ -78,8 +82,6 @@ togglePanel state =
             PanelOpen
 
 
-
-
 initModel : { width : Int, height : Int } -> Model
 initModel { width, height } =
     { devices = Array.empty
@@ -100,13 +102,10 @@ initModel { width, height } =
     , savedSchedules = Set.empty
     , sequencerData = Sequencer.init
     , dialog = DialogHidden
+    , peerName = "SymbioSing 1"
+    , peerMessages = []
+    , peerConnectionState = PeerSync.NotConnected
     }
-
-
-sendMessage : msg -> Cmd msg
-sendMessage msg =
-    Task.perform (\() -> msg) <|
-        Task.succeed ()
 
 
 main : Program { width : Int, height : Int } Model Msg
@@ -159,6 +158,7 @@ subscriptions model =
          , Browser.Events.onResize WindowDimensionsChanged
          , LocalStorage.listen localStorageListener
          , Sequencer.subscriptions model.sequencerData |> Sub.map SequencerMessage
+         , PeerSync.listenToPeerSync PeerMessageReceived
          ]
             ++ (if shouldListenToControlService then
                     [ listenToDeviceControlStatus ControlServiceUpdate ]
@@ -272,6 +272,9 @@ update msg model =
 
                         HideDialog ->
                             ( { model | dialog = DialogHidden }, Cmd.none )
+
+                        RequestCountdown float ->
+                            ( model, sendMessage (CountdownRequested float) )
             in
             ( { effectedModel | sequencerData = newModel }
             , Cmd.batch
@@ -680,6 +683,60 @@ update msg model =
 
         DialogBackDropClicked ->
             ( { model | dialog = DialogHidden }, Cmd.none )
+
+        PeerNameChanged string ->
+            ( { model | peerName = string }, Cmd.none )
+
+        SendPeerCommand peerSyncCommand ->
+            case peerSyncCommand of
+                PeerSync.Connect _ ->
+                    if model.peerConnectionState == PeerSync.Connected then
+                        ( model, Cmd.none )
+
+                    else
+                        ( { model | peerConnectionState = PeerSync.Connected }, PeerSync.sendPeerSyncCommand peerSyncCommand )
+
+                PeerSync.Disconnect ->
+                    if model.peerConnectionState == PeerSync.Connected then
+                        ( { model | peerConnectionState = PeerSync.NotConnected }, PeerSync.sendPeerSyncCommand peerSyncCommand )
+
+                    else
+                        ( model, Cmd.none )
+
+                PeerSync.SendMessage _ ->
+                    if model.peerConnectionState == PeerSync.Connected then
+                        ( model, PeerSync.sendPeerSyncCommand peerSyncCommand )
+
+                    else
+                        ( model, Cmd.none )
+
+        PeerMessageReceived result ->
+            case result of
+                Ok value ->
+                    case value of
+                        PeerSync.Text message ->
+                            ( { model | peerMessages = message :: model.peerMessages }, Cmd.none )
+
+                        PeerSync.Countdown record ->
+                            handleSequencerMessage (CountdownReceived record)
+
+                        PeerSync.PeerReady peer ->
+                            ( { model | peerMessages = ("Peer " ++ peer ++ " joined!") :: model.peerMessages }
+                            , Cmd.none
+                            )
+
+                        PeerSync.Disconnected ->
+                            ( { model | peerConnectionState = PeerSync.NotConnected }, Cmd.none )
+
+                Err error ->
+                    ( logError ("Failed to decode peer message:" ++ Json.Decode.errorToString error), Cmd.none )
+
+        CountdownRequested interval ->
+            ( model
+            , PeerSync.sendPeerSyncCommand <|
+                PeerSync.SendMessage <|
+                    PeerSync.Countdown { count = 0, outOf = 8, intervalMs = interval }
+            )
 
 
 view : Model -> Browser.Document Msg
@@ -1444,7 +1501,7 @@ displayServices { devices, servicesPanel } =
 
 
 header : Model -> El.Element Msg
-header { savedMenuState, savedSchedules } =
+header { savedMenuState, savedSchedules, peerName, peerConnectionState, peerMessages } =
     let
         savedMenu =
             case savedMenuState of
@@ -1470,9 +1527,47 @@ header { savedMenuState, savedSchedules } =
                 }
     in
     El.row [ fullWidth, El.centerX, El.alignTop ]
-        [ El.el [ El.centerX, El.alignTop, UIFont.color Dracula.white, Styles.fontSize.huge ] <|
+        [ El.row [ El.alignLeft, Styles.fontSize.small, El.width <| El.fillPortion 4, El.spacing 10 ]
+            [ if peerConnectionState == PeerSync.Connected then
+                El.row [ El.width <| El.fillPortion 2, El.spacing 5 ] [ El.text "peer name", El.text peerName ]
+
+              else
+                UIInput.text (Styles.textFieldStyle ++ [ El.width <| El.fillPortion 2 ])
+                    { label = UIInput.labelLeft [] <| El.text "peer name"
+                    , onChange = PeerNameChanged
+                    , placeholder = Nothing
+                    , text = peerName
+                    }
+            , case peerConnectionState of
+                PeerSync.NotConnected ->
+                    UIInput.button (Styles.button ++ [ El.width <| El.fillPortion 1 ])
+                        { label = El.text "Connect", onPress = Just <| SendPeerCommand (PeerSync.Connect peerName) }
+
+                PeerSync.Connected ->
+                    UIInput.button (Styles.button ++ [ El.width <| El.fillPortion 1 ])
+                        { label = El.text "Disconnect", onPress = Just <| SendPeerCommand PeerSync.Disconnect }
+            , El.column [ El.height <| El.px 36, El.scrollbarY, El.width <| El.fillPortion 2 ] <| (peerMessages |> List.map El.text)
+            , if peerConnectionState == PeerSync.Connected then
+                UIInput.button (Styles.button ++ [ El.width <| El.fillPortion 1 ])
+                    { label = El.text "Say Hi!"
+                    , onPress = Just <| SendPeerCommand <| PeerSync.SendMessage <| PeerSync.Text ("Hi from " ++ peerName)
+                    }
+
+              else
+                El.none
+            ]
+        , El.el
+            [ El.centerX
+            , El.alignTop
+            , UIFont.color Dracula.white
+            , Styles.fontSize.huge
+            , El.width <| El.fillPortion 6
+            , UIFont.center
+            ]
+          <|
             El.text "SymbioSing Control Panel"
-        , El.el [ El.alignRight, El.below savedMenu ] <|
+        , El.el [ El.width <| El.fillPortion 2 ] El.none
+        , El.el [ El.alignRight, El.below savedMenu, El.width <| El.fillPortion 2 ] <|
             UIInput.button (Styles.button ++ [ El.alignRight ])
                 { onPress = Just ToggleSavedMenu
                 , label =
