@@ -13,7 +13,7 @@ import Array exposing (Array)
 import Color.Dracula as Dracula
 import Dict as Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, htmlAttribute, mouseOver, none, padding, paddingXY, paragraph, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
+import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, htmlAttribute, mouseOver, none, padding, paddingXY, paragraph, px, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
@@ -33,7 +33,7 @@ import LocalStorage
 import Messages exposing (..)
 import Scheduler exposing (instructionsDecoder)
 import Set exposing (Set)
-import Styles exposing (fullWidth)
+import Styles exposing (fullWidth, palette)
 import Task
 import Time exposing (Posix)
 
@@ -74,7 +74,13 @@ type DialogStatus
 
 type RunStatus
     = NotRunning
+    | Countdown { count : Int, outOf : Int }
     | Running { startTime : TypedTime, nextCommands : List CommandsEntry, elapsedTime : TypedTime }
+
+
+type Initiator
+    = Myself
+    | Other
 
 
 init : Model
@@ -102,12 +108,16 @@ type OutgoingMsg
     | LogError String
     | ShowDialog
     | HideDialog
+    | RequestCountdown Float
 
 
 subscriptions : Model -> Sub SequencerMsg
 subscriptions { runStatus } =
     case runStatus of
         NotRunning ->
+            Sub.none
+
+        Countdown _ ->
             Sub.none
 
         Running _ ->
@@ -388,6 +398,13 @@ update msg model =
                 NotRunning ->
                     ( model, NoMessage, Cmd.none )
 
+                Countdown { count, outOf } ->
+                    if count == outOf then
+                        ( model, NoMessage, sendMessage PlaySequenceRequested )
+
+                    else
+                        ( model, NoMessage, Cmd.none )
+
                 Running runState ->
                     case runState.nextCommands of
                         entry :: rest ->
@@ -416,6 +433,16 @@ update msg model =
 
                         [] ->
                             ( { model | runStatus = NotRunning }, NoMessage, Cmd.none )
+
+        CountdownReceived { count, outOf } ->
+            if count == outOf then
+                ( model, NoMessage, sendMessage PlaySequenceRequested )
+
+            else
+                ( { model | runStatus = Countdown { count = count, outOf = outOf } }, NoMessage, Cmd.none )
+
+        CountdownStartRequested float ->
+            ( model, RequestCountdown float, Cmd.none )
 
 
 view : Model -> Element SequencerMsg
@@ -678,7 +705,9 @@ viewControls model =
                 NotRunning ->
                     [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
                         { label = row [ spacing 5 ] [ Images.playIcon, text "Play" ]
-                        , onPress = Just PlaySequenceRequested
+                        , onPress =
+                            Just <|
+                                CountdownStartRequested (TypedTime.minutes 1 |> TypedTime.divide 100 |> TypedTime.toMilliseconds)
                         }
                     , el [ width <| fillPortion 2 ] none
                     ]
@@ -693,6 +722,33 @@ viewControls model =
                             TypedTime.toFormattedString
                                 TypedTime.HoursMinutesSecondsHundredths
                                 status.elapsedTime
+                    ]
+
+                Countdown { count, outOf } ->
+                    [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
+                        { label = row [ spacing 5 ] [ Images.stopIcon, text "Stop" ]
+                        , onPress = Just PlaySequenceStopped
+                        }
+                    , List.range 0 3
+                        |> List.map
+                            (\i ->
+                                el
+                                    ([ height <| px 24
+                                     , width <| px 24
+                                     , Border.rounded 12
+                                     , Border.width 1
+                                     , Border.color palette.onBackground
+                                     ]
+                                        ++ (if (count |> modBy 4) == i then
+                                                [ Border.glow palette.accent 3, Background.color palette.accent ]
+
+                                            else
+                                                [ Background.color palette.primary ]
+                                           )
+                                    )
+                                    none
+                            )
+                        |> row [ width <| fillPortion 2, spaceEvenly ]
                     ]
         , button ((width <| fillPortion 1) :: Styles.button)
             { label = text "Save"

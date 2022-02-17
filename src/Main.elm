@@ -108,12 +108,6 @@ initModel { width, height } =
     }
 
 
-sendMessage : msg -> Cmd msg
-sendMessage msg =
-    Task.perform (\() -> msg) <|
-        Task.succeed ()
-
-
 main : Program { width : Int, height : Int } Model Msg
 main =
     Browser.document
@@ -164,6 +158,7 @@ subscriptions model =
          , Browser.Events.onResize WindowDimensionsChanged
          , LocalStorage.listen localStorageListener
          , Sequencer.subscriptions model.sequencerData |> Sub.map SequencerMessage
+         , PeerSync.listenToPeerSync PeerMessageReceived
          ]
             ++ (if shouldListenToControlService then
                     [ listenToDeviceControlStatus ControlServiceUpdate ]
@@ -277,6 +272,9 @@ update msg model =
 
                         HideDialog ->
                             ( { model | dialog = DialogHidden }, Cmd.none )
+
+                        RequestCountdown float ->
+                            ( model, sendMessage (CountdownRequested float) )
             in
             ( { effectedModel | sequencerData = newModel }
             , Cmd.batch
@@ -716,11 +714,29 @@ update msg model =
             case result of
                 Ok value ->
                     case value of
-                        PeerSync.Received message ->
+                        PeerSync.Text message ->
                             ( { model | peerMessages = message :: model.peerMessages }, Cmd.none )
+
+                        PeerSync.Countdown record ->
+                            handleSequencerMessage (CountdownReceived record)
+
+                        PeerSync.PeerReady peer ->
+                            ( { model | peerMessages = ("Peer " ++ peer ++ " joined!") :: model.peerMessages }
+                            , Cmd.none
+                            )
+
+                        PeerSync.Disconnected ->
+                            ( { model | peerConnectionState = PeerSync.NotConnected }, Cmd.none )
 
                 Err error ->
                     ( logError ("Failed to decode peer message:" ++ Json.Decode.errorToString error), Cmd.none )
+
+        CountdownRequested interval ->
+            ( model
+            , PeerSync.sendPeerSyncCommand <|
+                PeerSync.SendMessage <|
+                    PeerSync.Countdown { count = 0, outOf = 8, intervalMs = interval }
+            )
 
 
 view : Model -> Browser.Document Msg
@@ -1534,7 +1550,7 @@ header { savedMenuState, savedSchedules, peerName, peerConnectionState, peerMess
             , if peerConnectionState == PeerSync.Connected then
                 UIInput.button (Styles.button ++ [ El.width <| El.fillPortion 1 ])
                     { label = El.text "Say Hi!"
-                    , onPress = Just <| SendPeerCommand <| PeerSync.SendMessage ("Hi from " ++ peerName)
+                    , onPress = Just <| SendPeerCommand <| PeerSync.SendMessage <| PeerSync.Text ("Hi from " ++ peerName)
                     }
 
               else

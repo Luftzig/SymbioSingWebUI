@@ -1,13 +1,14 @@
-port module PeerSync exposing (PeerSyncCommand(..), sendPeerSyncCommand, PeerSyncMessage(..), listenToPeerSync, PeerSyncState(..))
+port module PeerSync exposing (CountdownData, PeerSyncCommand(..), PeerSyncMessage(..), PeerSyncState(..), listenToPeerSync, sendPeerSyncCommand)
 
-import Json.Decode
+import Json.Decode as JD
 import Json.Encode
 
 
 port sendPeerSyncCommand_ : Json.Encode.Value -> Cmd msg
 
 
-port listenToPeerSync_ : (Json.Decode.Value -> msg) -> Sub msg
+port listenToPeerSync_ : (JD.Value -> msg) -> Sub msg
+
 
 type PeerSyncState
     = Connected
@@ -17,7 +18,18 @@ type PeerSyncState
 type PeerSyncCommand
     = Connect String
     | Disconnect
-    | SendMessage String
+    | SendMessage PeerSyncMessage
+
+
+type PeerSyncMessage
+    = Text String
+    | Countdown CountdownData
+    | PeerReady String
+    | Disconnected
+
+
+type alias CountdownData =
+    { count : Int, outOf : Int, intervalMs : Float }
 
 
 sendPeerSyncCommand : PeerSyncCommand -> Cmd msg
@@ -37,19 +49,65 @@ encodeSyncPeerCommand syncPeerCommand =
         Disconnect ->
             Json.Encode.object [ ( "command", Json.Encode.string "disconnect" ) ]
 
-        SendMessage string ->
-            Json.Encode.object
+        SendMessage message ->
+            encodeMessage message
+
+
+encodeMessage : PeerSyncMessage -> Json.Encode.Value
+encodeMessage peerSyncMessage =
+    case peerSyncMessage of
+        Text string ->
+            Json.Encode.object <|
                 [ ( "command", Json.Encode.string "send" )
-                , ( "message", Json.Encode.string string )
+                , ( "text", Json.Encode.string string )
                 ]
 
-type PeerSyncMessage
-    = Received String
+        Countdown record ->
+            Json.Encode.object <|
+                [ ( "command", Json.Encode.string "countdown" )
+                , ( "count", Json.Encode.int record.count )
+                , ( "outOf", Json.Encode.int record.outOf )
+                , ( "intervalMs", Json.Encode.float record.intervalMs )
+                ]
 
-listenToPeerSync : (Result Json.Decode.Error PeerSyncMessage -> msg) -> Sub msg
+        PeerReady string ->
+            Json.Encode.object <|
+                [ ( "command", Json.Encode.string "ready" )
+                , ( "peer", Json.Encode.string string )
+                ]
+
+        Disconnected ->
+            -- We shouldn't actually emit this message
+            Json.Encode.null
+
+
+
+listenToPeerSync : (Result JD.Error PeerSyncMessage -> msg) -> Sub msg
 listenToPeerSync toMessage =
-    listenToPeerSync_ (\value -> toMessage (Json.Decode.decodeValue peerSyncMessageDecoder value))
+    listenToPeerSync_ (\value -> toMessage (JD.decodeValue peerSyncMessageDecoder value))
 
-peerSyncMessageDecoder : Json.Decode.Decoder PeerSyncMessage
+
+peerSyncMessageDecoder : JD.Decoder PeerSyncMessage
 peerSyncMessageDecoder =
-    Json.Decode.map Received Json.Decode.string
+    JD.field "type" JD.string
+        |> JD.andThen
+            (\command ->
+                case command of
+                    "send" ->
+                        JD.map Text (JD.field "text" JD.string)
+
+                    "countdown" ->
+                        JD.map3 (\count outOf intervalMs -> Countdown { count = count, outOf = outOf, intervalMs = intervalMs })
+                            (JD.field "count" JD.int)
+                            (JD.field "outOf" JD.int)
+                            (JD.field "intervalMs" JD.float)
+
+                    "ready" ->
+                        JD.map PeerReady (JD.field "from" JD.string)
+
+                    "disconnected" ->
+                        JD.succeed Disconnected
+
+                    string ->
+                        JD.fail ("'" ++ string ++ "' is not a supported command. Supported commands are 'send', 'countdown' and 'ready'")
+            )

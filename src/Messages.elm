@@ -8,7 +8,9 @@ import File exposing (File)
 import FlowIO exposing (Action, AnalogReadings, AnalogServiceRequest, Command, Configuration, Device, DeviceId, Port, PowerOffStatus, Service)
 import Json.Decode exposing (Value)
 import PeerSync exposing (PeerSyncCommand, PeerSyncMessage)
+import Task
 import Time exposing (Posix)
+
 
 type MainTab
     = SchedulerTab
@@ -58,16 +60,22 @@ type Msg
     | DialogBackDropClicked
     | PeerNameChanged String
     | SendPeerCommand PeerSyncCommand
-    | PeerMessageReceived (Result Json.Decode.Error PeerSyncMessage )
+    | PeerMessageReceived (Result Json.Decode.Error PeerSyncMessage)
+    | CountdownRequested Float
+
+
 
 -- Scheduler module
+
 
 type alias RoleName =
     String
 
+
 type RoleDeviceSelectState
     = SelectionClosed
     | SelectionOpen Int
+
 
 type alias RolesInstructions =
     Dict RoleName (Array Command)
@@ -82,7 +90,6 @@ type alias Instructions =
 type SchedulerIncomingMsg
     = InstructionsLoaded String Instructions
     | ConverterScheduleUpdates (Resource String Instructions)
-
 
 
 type SchedulerMsg
@@ -115,7 +122,11 @@ type SchedulerMsg
     | ReceivedIncomingMsg SchedulerIncomingMsg
     | ScheduleNameChanged String
 
+
+
 -- Sensors module
+
+
 type SensorsMsg
     = NewReading DeviceId Time.Posix AnalogReadings
     | DeviceSelected (Maybe DeviceId)
@@ -123,6 +134,8 @@ type SensorsMsg
 
 
 -- Converter module
+
+
 type DynamicsSettings
     = PWMValues
     | RegulatorValues
@@ -131,6 +144,7 @@ type DynamicsSettings
 type TrillInterval
     = Absolute TypedTime
     | PerBeat Float
+
 
 type ConverterMsg
     = SelectScoreFile
@@ -152,13 +166,15 @@ type ConverterMsg
     | ChangeSettingsTo DynamicsSettings
     | TrillIntervalChanged TrillInterval
 
+
+
 -- Sequencer Module
+
 
 type alias CommandsEntry =
     { startTime : TypedTime
     , commands : List { device : Device, deviceIndex : Int, command : Command }
     }
-
 
 
 type MoveDirection
@@ -195,9 +211,13 @@ type SequencerMsg
     | PlaySequenceStarted (List CommandsEntry) Posix
     | PlaySequenceStopped
     | SequencerTick Posix
+    | CountdownReceived PeerSync.CountdownData
+    | CountdownStartRequested Float
+
 
 
 -- Composer.Notation
+
 
 type alias HapticScore =
     Dict PartID HapticPart
@@ -255,4 +275,11 @@ type Dynamic
     | Forte
     | Fortissimo
     | Fortississimo
+
+
+sendMessage : msg -> Cmd msg
+sendMessage msg =
+    Task.perform (\() -> msg) <|
+        Task.succeed ()
+
 

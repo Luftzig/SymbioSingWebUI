@@ -20,6 +20,7 @@ export default class SignalingChannel {
     });
     this.socket.on("disconnect", () => {
       console.log("Disconnected");
+      this.onMessage({type: "disconnected"})
     });
     this.socket.on("connect_error", (error) => {
       console.log("Connection error", error.message);
@@ -36,7 +37,12 @@ export default class SignalingChannel {
   }
 
   send(message) {
+    console.log("SignalingChannel send", message)
     this.socket.emit("message", {from: this.peerId, target: "all", message});
+  }
+
+  countdown(payload) {
+    this.socket.emit("countdown", {from: this.peerId, ...payload})
   }
 
   sendTo(targetPeerId, message) {
