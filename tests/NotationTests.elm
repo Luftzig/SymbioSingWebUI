@@ -1,13 +1,13 @@
 module NotationTests exposing (..)
 
 import Array
-import Composer.Notation as Notation exposing (Dynamic(..), HapticNote(..), HapticScore, Measure, Signature, parseMusicXml)
+import Composer.Notation as Notation exposing (parseMusicXml)
 import Dict
 import Expect
 import Extra.TypedTime as TypedTime
 import FlowIO exposing (defaultCommand)
 import List.Extra
-import Scheduler
+import Messages exposing (Dynamic(..), HapticNote(..), HapticScore, Instructions, Measure, Signature)
 import Test exposing (..)
 
 
@@ -60,7 +60,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        emptyInstructions : Scheduler.Instructions
+                        emptyInstructions : Instructions
                         emptyInstructions =
                             { time = Array.fromList [ TypedTime.milliseconds 0 ]
                             , instructions =
@@ -94,7 +94,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions : Instructions
                         expectedInstructions =
                             { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 4 ]
                             , instructions =
@@ -136,7 +136,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions : Instructions
                         expectedInstructions =
                             { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 1, TypedTime.seconds 2 ]
                             , instructions =
@@ -183,7 +183,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions : Instructions
                         expectedInstructions =
                             { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 0.5, TypedTime.seconds 2 ]
                             , instructions =
@@ -235,7 +235,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions : Instructions
                         expectedInstructions =
                             { time =
                                 Array.fromList
@@ -315,7 +315,7 @@ convertHapticScoreSuite =
                             baseMeasure.divisionsPerQuarter
                                 * baseMeasure.signature.beats
 
-                        expected : Scheduler.Instructions
+                        expected : Instructions
                         expected =
                             { time =
                                 Array.fromList
@@ -392,7 +392,7 @@ convertHapticScoreSuite =
                             baseMeasure.divisionsPerQuarter
                                 * baseMeasure.signature.beats
 
-                        expected : Scheduler.Instructions
+                        expected : Instructions
                         expected =
                             { time =
                                 Array.fromList
@@ -448,7 +448,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        emptyInstructions : Scheduler.Instructions
+                        emptyInstructions : Instructions
                         emptyInstructions =
                             { time = Array.fromList [ TypedTime.milliseconds 0 ]
                             , instructions =
@@ -501,7 +501,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions : Instructions
                         expectedInstructions =
                             { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 0.5, TypedTime.seconds 2 ]
                             , instructions =
@@ -567,7 +567,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions : Instructions
                         expectedInstructions =
                             { time = Array.fromList [ TypedTime.milliseconds 0, TypedTime.seconds 0.5, TypedTime.seconds 2 ]
                             , instructions =
@@ -652,7 +652,7 @@ convertHapticScoreSuite =
                                   )
                                 ]
 
-                        expectedInstructions : Scheduler.Instructions
+                        expectedInstructions : Instructions
                         expectedInstructions =
                             { time =
                                 Array.fromList
@@ -756,7 +756,7 @@ convertHapticScoreSuite =
                             baseMeasure.divisionsPerQuarter
                                 * baseMeasure.signature.beats
 
-                        expected : Scheduler.Instructions
+                        expected : Instructions
                         expected =
                             { time =
                                 Array.fromList
@@ -838,7 +838,7 @@ convertHapticScoreSuite =
 parseMusicXmlSuite : Test
 parseMusicXmlSuite =
     let
-        ifParsedContentOk : String -> (Notation.HapticScore -> Expect.Expectation) -> Expect.Expectation
+        ifParsedContentOk : String -> (HapticScore -> Expect.Expectation) -> Expect.Expectation
         ifParsedContentOk content do =
             case parseMusicXml content of
                 Err e ->

@@ -1,15 +1,10 @@
 module Composer.Converter exposing (Model, init, update, view)
 
 import Color.Dracula as Dracula
-import Composer.Notation as Notation
-    exposing
-        ( ConversionParameters
-        , Dynamics
-        , parseMusicXml
-        )
+import Composer.Notation as Notation exposing (ConversionParameters, Dynamics, IntermediateRepr, parseMusicXml)
 import Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignBottom, alignRight, below, column, el, fillPortion, minimum, padding, paddingEach, paddingXY, paragraph, row, shrink, spacing, table, text, width, wrappedRow)
+import Element exposing (Element, alignBottom, alignRight, below, column, el, fill, fillPortion, height, maximum, minimum, padding, paddingEach, paddingXY, paragraph, row, scrollbars, shrink, spacing, table, text, width, wrappedRow)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events exposing (onFocus, onLoseFocus)
@@ -44,7 +39,7 @@ type alias Model =
     , displayedDynamics : DynamicsSettings
     , trillInterval : TrillInterval
     , showRolesSuggestions : Maybe PartID
-    , schedule : Resource String Instructions
+    , schedule : Resource ( List (List IntermediateRepr), String ) Instructions
     , targetName : String
     }
 
@@ -53,7 +48,7 @@ init : Model
 init =
     { sourceFile = Nothing
     , hapticScore = NotLoaded
-    , bpm = 80
+    , bpm = 100
     , roleMapping = Dict.empty
     , dynamics = defaultDynamics
     , regulatorSettings = defaultRegulatorSettings
@@ -209,10 +204,21 @@ showConversionControls model =
                             { label = text "Convert", onPress = Just ConversionRequested }
                         ]
                     , case model.schedule of
-                        Error e ->
-                            paragraph []
-                                [ text "error in conversion: "
-                                , el [ Font.color Styles.palette.error ] <| text e
+                        Error ( context, error ) ->
+                            column [ spacing 10 ]
+                                [ paragraph []
+                                    [ text "error in conversion: "
+                                    , el [ Font.color Styles.palette.error ] <| text error
+                                    ]
+                                , context
+                                    |> List.map (\list -> Debug.toString list)
+                                    |> List.map text
+                                    |> column
+                                        [ Font.color Styles.palette.error
+                                        , width <| maximum 500 <| fill
+                                        , scrollbars
+                                        , height <| minimum 120 <| fill
+                                        ]
                                 ]
 
                         NotLoaded ->
@@ -544,6 +550,9 @@ update msg model =
                 [ "application/vnd.recordare.musicxml+xml"
                 , "application/vnd.recordare.musicxml"
                 , "application/xml"
+                , "*.musicxml"
+                , ".musicxml"
+                , "musicxml"
                 ]
                 FileSelected
             )

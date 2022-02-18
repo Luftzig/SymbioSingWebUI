@@ -28,7 +28,6 @@ import Xml.Decode exposing (decode)
 import Xml.Query exposing (contains, int, string, tag, tags)
 
 
-
 dynamicToInt : Dynamic -> Int
 dynamicToInt dynamic =
     case dynamic of
@@ -433,7 +432,7 @@ type alias IntermediateRepr =
     }
 
 
-scoreToSchedule : ConversionParameters -> HapticScore -> Result String Instructions
+scoreToSchedule : ConversionParameters -> HapticScore -> Result ( List (List IntermediateRepr), String ) Instructions
 scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
     let
         dynamicToPwm : Dynamic -> Int
@@ -526,7 +525,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                               , action = Release
                               , dynamic = dynamic
                               , measureNumber = number
-                              , numberInMeasure = noteIndex
+                              , numberInMeasure = noteIndex + 1
                               }
                             ]
 
@@ -535,7 +534,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                               , action = NoChange
                               , dynamic = dynamic
                               , measureNumber = number
-                              , numberInMeasure = noteIndex
+                              , numberInMeasure = noteIndex + 1
                               }
                             ]
 
@@ -544,7 +543,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                               , action = Inflate
                               , dynamic = dynamic
                               , measureNumber = number
-                              , numberInMeasure = noteIndex
+                              , numberInMeasure = noteIndex + 1
                               }
                             ]
 
@@ -552,9 +551,8 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                             let
                                 trills =
                                     toDuration t
-                                    |> TypedTime.divideByInterval trillInterval
+                                        |> TypedTime.divideByInterval trillInterval
                             in
-
                             List.range 0 (floor trills - 1)
                                 |> List.map
                                     (\i ->
@@ -570,7 +568,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                                         , action = action
                                         , dynamic = dynamic
                                         , measureNumber = number
-                                        , numberInMeasure = noteIndex
+                                        , numberInMeasure = noteIndex + 1
                                         }
                                     )
             in
@@ -652,7 +650,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
         commonTimeline =
             Array.toList commonTime
 
-        instructions : Result String RolesInstructions
+        instructions : Result ( List (List IntermediateRepr), String ) RolesInstructions
         instructions =
             roles
                 |> Dict.map convertToInstructions
@@ -664,7 +662,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
         convertToInstructions :
             RoleName
             -> List { intermediates : List IntermediateRepr, name : String, port_ : FlowIO.Port }
-            -> Result String (Array FlowIO.Command)
+            -> Result ( List (List IntermediateRepr), String ) (Array FlowIO.Command)
         convertToInstructions roleName intermediatesList =
             let
                 getByPort p =
@@ -728,10 +726,10 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                     -> IntermediateRepr
                     -> IntermediateRepr
                     -> IntermediateRepr
-                    -> Result String FlowIO.Command
+                    -> Result ( Maybe IntermediateRepr, String ) FlowIO.Command
                 mergePortInstructions p1 p2 p3 p4 p5 =
                     let
-                        settleAction : List IntermediateRepr -> Result String IntermediateAction
+                        settleAction : List IntermediateRepr -> Result ( Maybe IntermediateRepr, String ) IntermediateAction
                         settleAction actions =
                             let
                                 releaseActions =
@@ -745,7 +743,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                                 errorCtx =
                                     List.head actions
                                         |> (\repr ->
-                                                "Problem in "
+                                                "In role "
                                                     ++ roleName
                                                     ++ ", measure "
                                                     ++ (repr
@@ -755,7 +753,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                                            )
 
                                 noteErrorString ( i, repr ) =
-                                    "(P" ++ String.fromInt i ++ ", note " ++ String.fromInt repr.numberInMeasure ++ ")"
+                                    "(P" ++ String.fromInt (i + 1) ++ ", note " ++ String.fromInt repr.numberInMeasure ++ ")"
 
                                 conflictingError list =
                                     list
@@ -768,10 +766,11 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
 
                                 ( False, False ) ->
                                     Err
-                                        (errorCtx
-                                            ++ " conflicting actions: Release ["
+                                        ( Just p1
+                                        , errorCtx
+                                            ++ " I found conflicting actions: Release in notes ["
                                             ++ conflictingError releaseActions
-                                            ++ "] and Inflate ["
+                                            ++ "] and Inflate in ["
                                             ++ conflictingError inflateActions
                                             ++ "]"
                                         )
@@ -835,7 +834,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                         (settleAction [ p1, p2, p3, p4, p5 ])
             in
             if List.isEmpty intermediatesList || List.length intermediatesList > 5 then
-                Err "Can only map up to five parts to a single role"
+                Err ( [], "Can only map up to five parts to a single role" )
 
             else if
                 intermediatesList
@@ -843,7 +842,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                     |> Dict.frequencies
                     |> Dict.any (\_ ps -> ps > 1)
             then
-                Err "Each part needs to be mapped to a different port"
+                Err ( [], "Each part needs to be mapped to a different port" )
 
             else
                 List.map5 mergePortInstructions
@@ -853,6 +852,18 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                     (port4 |> fillInstructionLists commonTimeline Nothing)
                     (port5 |> fillInstructionLists commonTimeline Nothing)
                     |> Result.combine
+                    |> Result.mapError
+                        (\( inter, errorMessage ) ->
+                            ( case inter of
+                                Just interError ->
+                                    [port1, port2, port3, port4, port5]
+                                        |> List.map (\innerList -> List.filter (\item -> item.measureNumber == interError.measureNumber) innerList)
+
+                                Nothing ->
+                                    []
+                            , errorMessage
+                            )
+                        )
                     |> Result.map Array.fromList
     in
     instructions
