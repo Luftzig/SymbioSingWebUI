@@ -356,19 +356,18 @@ schedulerRow role state index row =
         PlannedInstruction ->
             El.row (cellHeight :: border) [ El.text "actions", El.text "PWM", El.text "[] [] [] [] []" ]
 
-        TooManyInstructions _ numberOfRows ->
-            El.el (cellHeight :: border) <| El.text ("To many rows... (" ++ String.fromInt numberOfRows ++ ")")
-
 
 type SchedulerRow
     = ExistingInstruction TypedTime (Dict RoleName Command)
     | PlannedInstruction
-    | TooManyInstructions TypedTime Int
 
 
 devicesTable : Model -> El.Element SchedulerMsg
 devicesTable model =
     let
+        numInstructions =
+            Array.length model.instructions.time
+
         instructionsAt : Int -> RolesInstructions -> Dict RoleName Command
         instructionsAt index rolesInstructions =
             rolesInstructions
@@ -380,24 +379,38 @@ devicesTable model =
 
         rows : List SchedulerRow
         rows =
-            if Array.length model.instructions.time > 100 then
-                [ TooManyInstructions
-                    (Maybe.withDefault TypedTime.zero <|
-                        Array.get (Array.length model.instructions.time - 1) model.instructions.time
-                    )
-                    (Array.length model.instructions.time)
-                ]
+            case model.state of
+                Paused record ->
+                    model.instructions.time
+                        |> Array.indexedMap
+                            (\index time ->
+                                ExistingInstruction
+                                    time
+                                    (instructionsAt index model.instructions.instructions)
+                            )
+                        |> Array.toList
 
-            else
-                model.instructions.time
-                    |> Array.indexedMap
-                        (\index time ->
-                            ExistingInstruction
-                                time
-                                (instructionsAt index model.instructions.instructions)
-                        )
-                    |> Array.push PlannedInstruction
-                    |> Array.toList
+                Stopped ->
+                    model.instructions.time
+                        |> Array.indexedMap
+                            (\index time ->
+                                ExistingInstruction
+                                    time
+                                    (instructionsAt index model.instructions.instructions)
+                            )
+                        |> Array.push PlannedInstruction
+                        |> Array.toList
+
+                RunningInstructions { commandIndex } ->
+                    model.instructions.time
+                        |> Array.slice (max (commandIndex - 3) 0) (min numInstructions (commandIndex + 7))
+                        |> Array.indexedMap
+                            (\index time ->
+                                ExistingInstruction
+                                    time
+                                    (instructionsAt index model.instructions.instructions)
+                            )
+                        |> Array.toList
 
         maxTime =
             rows
@@ -510,16 +523,6 @@ devicesTable model =
                                     , isDisabled = True
                                     , onChangeDisabled = AddInstruction
                                     }
-
-                            TooManyInstructions time _ ->
-                                El.el
-                                    [ El.centerY
-                                    , El.htmlAttribute <| Html.Attributes.type_ "number"
-                                    , El.width <| El.px 80
-                                    ]
-                                <|
-                                    El.text <|
-                                        TypedTime.toMillisecondsString time
             }
 
         roleHeader : Int -> RoleName -> El.Element SchedulerMsg
@@ -720,7 +723,6 @@ buttons model =
           else
             El.none
         ]
-
 
 
 type Effect
@@ -1081,14 +1083,14 @@ update msg model =
                                     instructions =
                                         model.instructions.instructions
 
-                                    deviceIdToIdx : Dict DeviceId (Int, Device)
+                                    deviceIdToIdx : Dict DeviceId ( Int, Device )
                                     deviceIdToIdx =
                                         model.devices
                                             |> Array.toIndexedList
                                             |> List.filterMap
                                                 (\( idx, device ) ->
                                                     device.details
-                                                        |> Maybe.map (\details -> ( details.id, (idx, device) ))
+                                                        |> Maybe.map (\details -> ( details.id, ( idx, device ) ))
                                                 )
                                             |> Dict.fromList
 
@@ -1097,7 +1099,7 @@ update msg model =
                                         Dict.get role model.roleDeviceMapping
                                             |> Maybe.map (\deviceId -> ( deviceId, commandsArray ))
 
-                                    mapDeviceIdToDeviceIndex : ( DeviceId, b ) -> Maybe ( (Int, Device), b )
+                                    mapDeviceIdToDeviceIndex : ( DeviceId, b ) -> Maybe ( ( Int, Device ), b )
                                     mapDeviceIdToDeviceIndex ( deviceId, commandsArray ) =
                                         Dict.get deviceId deviceIdToIdx
                                             |> Maybe.map (\idx -> ( idx, commandsArray ))
@@ -1108,8 +1110,8 @@ update msg model =
                                             commandsArray
                                             |> Maybe.map (\cmd -> ( deviceIdx, cmd ))
 
-                                    createCommand : ( (Int, Device), Command ) -> Cmd msg
-                                    createCommand ( (deviceIdx, device), command ) =
+                                    createCommand : ( ( Int, Device ), Command ) -> Cmd msg
+                                    createCommand ( ( deviceIdx, device ), command ) =
                                         sendCommand
                                             { deviceIndex = deviceIdx
                                             , command =
