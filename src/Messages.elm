@@ -44,6 +44,8 @@ type Msg
     | SensorReadingReceived Int (Result Json.Decode.Error AnalogReadings)
     | SensorReadingTimestampAttached Int ( Time.Posix, AnalogReadings )
     | SensorReadingModeChanged Int AnalogServiceRequest
+    | BatteryReadingRequested Int
+    | BatteryReadingReceived { deviceIndex : Int, level : Float }
     | SensorsMessage SensorsMsg
     | ComposerMessage ConverterMsg
     | ChangeTabTo MainTab
@@ -281,5 +283,3 @@ sendMessage : msg -> Cmd msg
 sendMessage msg =
     Task.perform (\() -> msg) <|
         Task.succeed ()
-
-

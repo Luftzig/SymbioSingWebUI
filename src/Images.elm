@@ -406,3 +406,12 @@ playIcon =
 stopIcon =
     svgElement 18 [] <|
         Material.Icons.stop 18 Inherit
+
+
+batteryUnknown =
+    svgElement 18 [] <|
+        Material.Icons.battery_unknown 18 Inherit
+
+batteryRegular =
+    svgElement 18 [] <|
+        Material.Icons.battery_std 18 Inherit

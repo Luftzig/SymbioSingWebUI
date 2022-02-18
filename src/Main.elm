@@ -155,6 +155,7 @@ subscriptions model =
          , listenToDeviceConfiguration DeviceConfigurationChanged
          , listenToPowerOffStatus DevicePowerOffStatusChange
          , listenToAnalogReadings SensorReadingReceived
+         , listenToBatteryLevel BatteryReadingReceived
          , Browser.Events.onResize WindowDimensionsChanged
          , LocalStorage.listen localStorageListener
          , Sequencer.subscriptions model.sequencerData |> Sub.map SequencerMessage
@@ -738,6 +739,14 @@ update msg model =
                     PeerSync.Countdown { count = 0, outOf = 8, intervalMs = interval }
             )
 
+        BatteryReadingRequested index ->
+            (model, FlowIO.requestBatteryLevel { deviceIndex = index})
+
+
+        BatteryReadingReceived {deviceIndex, level} ->
+            ( model |> updateDevices (updateDevice deviceIndex (setBatteryLevel (Just level))), Cmd.none)
+
+
 
 view : Model -> Browser.Document Msg
 view model =
@@ -891,6 +900,22 @@ displayDeviceList model =
                                                 AddServiceToPanel index service
                                     , label = El.text <| serviceToPrettyName service
                                     }
+
+                            batteryIndicator =
+                                UIInput.button Styles.button
+                                  { label =
+                                      case device.batteryLevel of
+                                          Just level ->
+                                              El.row []
+                                                  [ Images.batteryRegular
+                                                  , El.text <| String.fromFloat level
+                                                  , El.text "%"
+                                                  ]
+
+                                          Nothing ->
+                                              Images.batteryUnknown
+                                  , onPress = Just (BatteryReadingRequested index)
+                                  }
                         in
                         El.column [ El.spacing 5 ]
                             [ El.row [ El.width El.fill ]
@@ -905,7 +930,7 @@ displayDeviceList model =
                             , case device.details |> Maybe.map .services of
                                 Just services ->
                                     El.wrappedRow [ El.spacing 4 ] <|
-                                        List.map serviceButton services
+                                        (batteryIndicator :: (List.map serviceButton services))
 
                                 Nothing ->
                                     El.el [] <| El.text "No services"

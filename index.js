@@ -8,6 +8,7 @@ import {PowerOffService} from "flow-io-web-lib/lib/services/powerOffService"
 import * as PeerSync from "./src/peerSync"
 
 import LocalStorage from "./src/localStorage"
+import {BatteryService} from "flow-io-web-lib/lib/services/batteryService"
 
 const flowIoDevices /*: FlowIo[]*/ = []
 
@@ -20,6 +21,7 @@ LocalStorage.wire(app)
 
 app.ports.createDevice.subscribe(() => {
   const flowIo = new FlowIo({
+    battery: new BatteryService(),
     control: new ControlService(),
     config: new ConfigService(),
     powerOff: new PowerOffService(),
@@ -70,6 +72,9 @@ const registerServicesToPorts = ({device, deviceIndex}) => {
   )
   device.services.analog?.onValuesChange(values =>
     app.ports.listenToAnalogReadings_.send({deviceIndex, readings: values}))
+  device.services.battery?.onBatteryLevelChanged(level =>
+    app.ports.listenToBatteryLevel?.send({deviceIndex, level})
+  )
 }
 
 const getDeviceAndService = (deviceIndex, service) => {
@@ -171,6 +176,16 @@ app.ports.requestAnalogReadings_.subscribe(({deviceIndex, mode}) => {
   analogService.requestValues(mode.kind, mode.averagingWindowSamples).then(r => {
     console.debug("readings:", r, ". We expect this value to be sent through the event listener.")
   })
+})
+
+app.ports.requestBatteryLevel.subscribe(({deviceIndex}) => {
+  const {service: batteryService} = getDeviceAndService(deviceIndex, "battery")
+  if (batteryService == null) {
+    return
+  }
+  batteryService.getBatteryLevel().then(level =>
+    app.ports.listenToBatteryLevel?.send({deviceIndex, level})
+  )
 })
 
 

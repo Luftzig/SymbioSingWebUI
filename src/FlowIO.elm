@@ -28,6 +28,7 @@ port module FlowIO exposing
     , getLastCommand
     , isPortOpen
     , listenToAnalogReadings
+    , listenToBatteryLevel
     , listenToControlService
     , listenToDeviceConfiguration
     , listenToDeviceControlStatus
@@ -38,6 +39,7 @@ port module FlowIO exposing
     , queryDeviceConfiguration
     , queryPowerOffStatus
     , requestAnalogReadings
+    , requestBatteryLevel
     , sendCommand
     , sendDeviceConfiguration
     , sendPowerOffStatus
@@ -59,8 +61,9 @@ port module FlowIO exposing
     , setPumpPwm
     , setStatusTo
     , translateAction
+    , translateActionInCommand
     , updateCommandFromStatus
-    , translateActionInCommand)
+    , setBatteryLevel)
 
 import Array exposing (Array)
 import Extra.RemoteService as RemoteService exposing (RemoteService, updateCommand, updateData)
@@ -159,6 +162,16 @@ sendPowerOffStatus index status =
 
 
 
+-- Battery Service
+
+
+port requestBatteryLevel : { deviceIndex : Int } -> Cmd msg
+
+
+port listenToBatteryLevel : ({ deviceIndex : Int, level : Float } -> msg) -> Sub msg
+
+
+
 -- FlowIODevice types
 {- TODO: Should I wrap all the service in a type to represent their status?
    possible values are probably: not supported, expecting update, updated? We also have local value versus remote one.
@@ -172,6 +185,7 @@ type alias Device =
     , powerOffServiceStatus : Maybe PowerOffStatus
     , configuration : Maybe Configuration
     , analogSensorsService : AnalogService
+    , batteryLevel : Maybe Float
     }
 
 
@@ -308,6 +322,7 @@ defaultDevice =
     , configuration = Nothing
     , powerOffServiceStatus = Nothing
     , analogSensorsService = RemoteService.init
+    , batteryLevel = Nothing
     }
 
 
@@ -425,6 +440,11 @@ setConfiguration maybeConfiguration flowIODevice =
 setPowerOffStatus : Maybe PowerOffStatus -> Device -> Device
 setPowerOffStatus maybePowerOffStatus flowIODevice =
     { flowIODevice | powerOffServiceStatus = maybePowerOffStatus }
+
+
+setBatteryLevel : Maybe Float -> Device -> Device
+setBatteryLevel newLevel device =
+    { device | batteryLevel = newLevel }
 
 
 
@@ -626,6 +646,7 @@ configurationDecoding int =
 
         "REGULATED_VACUUM" ->
             Just RegulatedVacuum
+
         _ ->
             Nothing
 
