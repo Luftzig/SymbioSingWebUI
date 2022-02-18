@@ -4,6 +4,7 @@ module Composer.Sequencer exposing
     , init
     , send
     , subscriptions
+    , transformSequenceToCommands
     , update
     , view
     , viewDialog
@@ -13,7 +14,7 @@ import Array exposing (Array)
 import Color.Dracula as Dracula
 import Dict as Dict exposing (Dict)
 import Dict.Extra as Dict
-import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, htmlAttribute, minimum, mouseOver, none, padding, paddingXY, paragraph, px, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
+import Element exposing (Element, alignBottom, alignLeft, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, htmlAttribute, minimum, mouseOver, none, padding, paddingXY, px, row, scrollbarY, spaceEvenly, spacing, text, width, wrappedRow)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
@@ -31,6 +32,7 @@ import Json.Decode as JD
 import List.Extra as List
 import LocalStorage
 import Messages exposing (..)
+import PeerSync exposing (PeerSyncState)
 import Scheduler exposing (instructionsDecoder)
 import Set exposing (Set)
 import Styles exposing (fullWidth, palette)
@@ -47,6 +49,8 @@ type alias Model =
     , dialog : DialogStatus
     , showPartDetails : Dict String Collapsable
     , runStatus : RunStatus
+    , commands : List CommandsEntry
+    , serverConnectionStatus : PeerSyncState
     }
 
 
@@ -88,6 +92,8 @@ init =
     , dialog = NoDialog
     , showPartDetails = Dict.empty
     , runStatus = NotRunning
+    , commands = []
+    , serverConnectionStatus = PeerSync.NotConnected
     }
 
 
@@ -117,6 +123,115 @@ subscriptions { runStatus } =
 
         Running _ ->
             Time.every 5 SequencerTick
+
+
+transformSequenceModel : Model -> Model
+transformSequenceModel model =
+    { model | commands = transformSequenceToCommands model }
+
+
+transformSequenceToCommands :
+    { a
+        | availableDevices : Array Device
+        , sequence : List ( String, Instructions )
+        , roleAssignments : Dict RoleName (Set DeviceId)
+    }
+    -> List CommandsEntry
+transformSequenceToCommands model =
+    let
+        devices =
+            model.availableDevices |> Array.toList
+
+        commands : List CommandsEntry
+        commands =
+            model.sequence
+                |> List.mapAccuml transformTimes TypedTime.zero
+                |> Tuple.second
+                |> List.map toCommandsWithRoles
+                |> List.concat
+                --|> List.concatMap toCommandsWithRoles
+                |> List.map toCommandsWithDevice
+
+        {- todo: when we combine two instruction sets, the second starts with time 0, then we have
+           have two entries with the same start time, and either both will be executed (the second
+           with 1 tick delay) or the second would be skipped. Neither is good. We should remove the
+           first one of the unequal pair.
+           --|> deduplicate
+        -}
+        transformTimes : TypedTime -> ( String, Instructions ) -> ( TypedTime, Instructions )
+        transformTimes accTime ( _, instructions ) =
+            let
+                lastTime =
+                    instructions.time |> Array.last |> Maybe.withDefault TypedTime.zero
+
+                updatedTime =
+                    instructions.time
+                        |> Array.map (TypedTime.add accTime)
+            in
+            ( lastTime |> TypedTime.add accTime
+            , { instructions | time = updatedTime }
+            )
+
+        toCommandsWithRoles : Instructions -> List ( TypedTime, List ( RoleName, Command ) )
+        toCommandsWithRoles instructions =
+            let
+                transpose : Dict RoleName (Array Command) -> List (List ( RoleName, Command ))
+                transpose dict =
+                    dict
+                        |> Dict.map
+                            (\role array ->
+                                array
+                                    |> Array.map (\c -> ( role, c ))
+                                    |> Array.toList
+                            )
+                        |> Dict.values
+                        |> List.transpose
+            in
+            List.zip (instructions.time |> Array.toList)
+                (instructions.instructions |> transpose)
+
+        toCommandsWithDevice : ( TypedTime, List ( RoleName, Command ) ) -> CommandsEntry
+        toCommandsWithDevice ( t, roleCommands ) =
+            { startTime = t
+            , commands = List.concatMap mapDevices roleCommands
+            }
+
+        mapDevices :
+            ( RoleName, Command )
+            -> List { device : Device, deviceIndex : Int, command : Command }
+        mapDevices ( roleName, flowIOCommand ) =
+            let
+                assignedDevices =
+                    model.roleAssignments
+                        |> Dict.get roleName
+                        |> Maybe.withDefault Set.empty
+
+                getDeviceAndIndex : DeviceId -> Maybe ( Int, Device )
+                getDeviceAndIndex deviceId =
+                    devices
+                        |> List.indexedMap Tuple.pair
+                        |> List.find
+                            (\( _, device ) ->
+                                device.details
+                                    |> Maybe.map .id
+                                    |> (==) (Just deviceId)
+                            )
+
+                assignedCommands =
+                    assignedDevices
+                        |> Set.toList
+                        |> List.filterMap
+                            (\deviceId ->
+                                getDeviceAndIndex deviceId
+                                    |> Maybe.map
+                                        (\( index, device ) ->
+                                            { device = device, deviceIndex = index, command = flowIOCommand }
+                                        )
+                            )
+            in
+            assignedCommands
+    in
+    commands
 
 
 update : SequencerMsg -> Model -> ( Model, OutgoingMsg, Cmd SequencerMsg )
@@ -205,10 +320,11 @@ update msg model =
                 newRoles =
                     Dict.addKeys Set.empty partRoles model.roleAssignments
             in
-            ( { model
-                | sequence = newSequence
-                , roleAssignments = newRoles
-              }
+            ( transformSequenceModel
+                { model
+                    | sequence = newSequence
+                    , roleAssignments = newRoles
+                }
             , NoMessage
             , Cmd.none
             )
@@ -240,7 +356,14 @@ update msg model =
                 newAssignments =
                     Dict.keepOnly newRoles model.roleAssignments
             in
-            ( { model | sequence = newSequence, roleAssignments = newAssignments }, NoMessage, Cmd.none )
+            ( transformSequenceModel
+                { model
+                    | sequence = newSequence
+                    , roleAssignments = newAssignments
+                }
+            , NoMessage
+            , Cmd.none
+            )
 
         MovePart partIndex moveDirection ->
             let
@@ -252,7 +375,13 @@ update msg model =
                         MoveDown ->
                             List.swapAt partIndex (partIndex + 1) model.sequence
             in
-            ( { model | sequence = newSequence }, NoMessage, Cmd.none )
+            ( transformSequenceModel
+                { model
+                    | sequence = newSequence
+                }
+            , NoMessage
+            , Cmd.none
+            )
 
         RoleClicked roleName ->
             ( { model | dialog = AssignRoleDialog roleName }, ShowDialog, Cmd.none )
@@ -282,102 +411,21 @@ update msg model =
                 newRoles =
                     model.roleAssignments |> Dict.insert role newAssignments
             in
-            ( { model | roleAssignments = newRoles }, NoMessage, Cmd.none )
+            ( transformSequenceModel { model | roleAssignments = newRoles }, NoMessage, Cmd.none )
 
         PlaySequenceRequested ->
             let
-                devices =
-                    model.availableDevices |> Array.toList
-
-                commands : List CommandsEntry
                 commands =
-                    model.sequence
-                        |> List.mapAccuml transformTimes TypedTime.zero
-                        |> Tuple.second
-                        |> List.concatMap toCommandsWithRoles
-                        |> List.map toCommandsWithDevice
-
-                {- todo: when we combine two instruction sets, the second starts with time 0, then we have
-                   have two entries with the same start time, and either both will be executed (the second
-                   with 1 tick delay) or the second would be skipped. Neither is good. We should remove the
-                   first one of the unequal pair.
-                   --|> deduplicate
-                -}
-                transformTimes : TypedTime -> ( String, Instructions ) -> ( TypedTime, Instructions )
-                transformTimes accTime ( _, instructions ) =
-                    let
-                        lastTime =
-                            instructions.time |> Array.last |> Maybe.withDefault TypedTime.zero
-
-                        updatedTime =
-                            instructions.time
-                                |> Array.map (TypedTime.add accTime)
-                    in
-                    ( lastTime |> TypedTime.add accTime
-                    , { instructions | time = updatedTime }
-                    )
-
-                toCommandsWithRoles : Instructions -> List ( TypedTime, List ( RoleName, Command ) )
-                toCommandsWithRoles instructions =
-                    let
-                        transpose : Dict RoleName (Array Command) -> List (List ( RoleName, Command ))
-                        transpose dict =
-                            dict
-                                |> Dict.map (\k arr -> arr |> Array.map (\c -> ( k, c )) |> Array.toList)
-                                |> Dict.values
-                    in
-                    List.zip (instructions.time |> Array.toList)
-                        (instructions.instructions |> transpose)
-
-                toCommandsWithDevice : ( TypedTime, List ( RoleName, Command ) ) -> CommandsEntry
-                toCommandsWithDevice ( t, roleCommands ) =
-                    { startTime = t
-                    , commands = List.concatMap mapDevices roleCommands
-                    }
-
-                mapDevices :
-                    ( RoleName, Command )
-                    -> List { device : Device, deviceIndex : Int, command : Command }
-                mapDevices ( roleName, flowIOCommand ) =
-                    let
-                        assignedDevices =
-                            model.roleAssignments
-                                |> Dict.get roleName
-                                |> Maybe.withDefault Set.empty
-
-                        getDeviceAndIndex : DeviceId -> Maybe ( Int, Device )
-                        getDeviceAndIndex deviceId =
-                            devices
-                                |> List.indexedMap Tuple.pair
-                                |> List.find
-                                    (\( _, device ) ->
-                                        device.details
-                                            |> Maybe.map .id
-                                            |> (==) (Just deviceId)
-                                    )
-
-                        assignedCommands =
-                            assignedDevices
-                                |> Set.toList
-                                |> List.filterMap
-                                    (\deviceId ->
-                                        getDeviceAndIndex deviceId
-                                            |> Maybe.map
-                                                (\( index, device ) ->
-                                                    { device = device, deviceIndex = index, command = flowIOCommand }
-                                                )
-                                    )
-                    in
-                    assignedCommands
+                    transformSequenceToCommands model
             in
-            ( model, NoMessage, Time.now |> Task.perform (PlaySequenceStarted commands) )
+            ( { model | commands = commands }, NoMessage, Time.now |> Task.perform PlaySequenceStarted )
 
-        PlaySequenceStarted commands posix ->
+        PlaySequenceStarted posix ->
             ( { model
                 | runStatus =
                     Running
                         { startTime = TypedTime.fromPosix posix
-                        , nextCommands = commands
+                        , nextCommands = model.commands
                         , elapsedTime = TypedTime.zero
                         }
               }
@@ -431,7 +479,7 @@ update msg model =
 
         CountdownReceived { count, outOf } ->
             if count == outOf then
-                ( model, NoMessage, sendMessage PlaySequenceRequested )
+                ( model, NoMessage, Time.now |> Task.perform PlaySequenceStarted )
 
             else
                 ( { model | runStatus = Countdown { count = count, outOf = outOf } }, NoMessage, Cmd.none )
@@ -704,8 +752,13 @@ viewControls model =
                 [ button ((width <| fillPortion 1) :: Styles.buttonPrimary)
                     { label = row [ spacing 5 ] [ Images.playIcon, text "Play" ]
                     , onPress =
-                        Just <|
-                            CountdownStartRequested (TypedTime.minutes 1 |> TypedTime.divide 100 |> TypedTime.toMilliseconds)
+                        case model.serverConnectionStatus of
+                            PeerSync.Connected ->
+                                Just <|
+                                    CountdownStartRequested (TypedTime.minutes 1 |> TypedTime.divide 100 |> TypedTime.toMilliseconds)
+
+                            PeerSync.NotConnected ->
+                                Just <| PlaySequenceRequested
                     }
                 , el [ playInfoWidth ] none
                 ]

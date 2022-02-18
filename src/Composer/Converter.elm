@@ -210,15 +210,15 @@ showConversionControls model =
                                     [ text "error in conversion: "
                                     , el [ Font.color Styles.palette.error ] <| text error
                                     ]
-                                , context
-                                    |> List.map (\list -> Debug.toString list)
-                                    |> List.map text
-                                    |> column
-                                        [ Font.color Styles.palette.error
-                                        , width <| maximum 500 <| fill
-                                        , scrollbars
-                                        , height <| minimum 120 <| fill
-                                        ]
+                                --, context
+                                --    |> List.map (\list -> Debug.toString list)
+                                --    |> List.map text
+                                --    |> column
+                                --        [ Font.color Styles.palette.error
+                                --        , width <| maximum 500 <| fill
+                                --        , scrollbars
+                                --        , height <| minimum 120 <| fill
+                                --        ]
                                 ]
 
                         NotLoaded ->

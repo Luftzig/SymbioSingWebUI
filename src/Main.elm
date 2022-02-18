@@ -144,7 +144,7 @@ subscriptions model =
         localStorageListener event =
             case event of
                 LocalStorage.Loaded key value ->
-                    ScheduleLoaded key (Debug.log "Loaded value" value)
+                    ScheduleLoaded key value
 
                 LocalStorage.ReceivedAllKeys strings ->
                     ReceivedSavedSchedules strings
@@ -197,7 +197,7 @@ update msg model =
                     updateDevices (updateDevice deviceIndex (setLastCommand newCommand)) model
 
                 Nothing ->
-                    Debug.log ("Tried to update command to device " ++ String.fromInt deviceIndex ++ " that does not exist, or does not have a control service.") model
+                    model
 
         removeDeviceServices deviceIndex =
             let
@@ -376,10 +376,10 @@ update msg model =
 
                         Pending ->
                             -- This is an error to request to disconnect while pending
-                            Debug.log ("Requested to disconnect from device " ++ Debug.toString deviceIndex ++ ", but device is pending connection.") ( model, Cmd.none )
+                            ( logError ("Requested to disconnect from device " ++ String.fromInt deviceIndex ++ ", but device is pending connection."), Cmd.none )
 
                 Nothing ->
-                    Debug.log "Requested to remove a non-existing device" <| ( model, Cmd.none )
+                    ( logError "Requested to remove a non-existing device", Cmd.none )
 
         ControlServiceUpdate { deviceIndex, status } ->
             let
@@ -391,10 +391,10 @@ update msg model =
             in
             case ( controlServiceStatus, maybeDevice ) of
                 ( Err error, _ ) ->
-                    Debug.log ("Failed to decode control service status. Error: " ++ Json.Decode.errorToString error) ( model, Cmd.none )
+                    (logError ("Failed to decode control service status. Error: " ++ Json.Decode.errorToString error) , Cmd.none )
 
                 ( _, Nothing ) ->
-                    Debug.log ("Status update for device " ++ Debug.toString deviceIndex ++ " received, but device does not exist") ( model, Cmd.none )
+                    (logError ("Status update for device " ++ String.fromInt deviceIndex ++ " received, but device does not exist") , Cmd.none )
 
                 ( Ok newStatus, Just _ ) ->
                     let
@@ -561,7 +561,7 @@ update msg model =
             ( model, sendPowerOffStatus deviceIndex powerOffStatus )
 
         NoAction explanation ->
-            ( Debug.log ("Received a no action Msg: " ++ explanation) model, Cmd.none )
+            ( logError ("Received a no action Msg: " ++ explanation) , Cmd.none )
 
         SensorReadingReceived deviceIndex result ->
             result
@@ -695,11 +695,21 @@ update msg model =
                         ( model, Cmd.none )
 
                     else
-                        ( { model | peerConnectionState = PeerSync.Connected }, PeerSync.sendPeerSyncCommand peerSyncCommand )
+                        ( { model
+                            | peerConnectionState = PeerSync.Connected
+                            , sequencerData = (\p -> { p | serverConnectionStatus = PeerSync.Connected }) model.sequencerData
+                          }
+                        , PeerSync.sendPeerSyncCommand peerSyncCommand
+                        )
 
                 PeerSync.Disconnect ->
                     if model.peerConnectionState == PeerSync.Connected then
-                        ( { model | peerConnectionState = PeerSync.NotConnected }, PeerSync.sendPeerSyncCommand peerSyncCommand )
+                        ( { model
+                            | peerConnectionState = PeerSync.NotConnected
+                            , sequencerData = (\p -> { p | serverConnectionStatus = PeerSync.NotConnected }) model.sequencerData
+                          }
+                        , PeerSync.sendPeerSyncCommand peerSyncCommand
+                        )
 
                     else
                         ( model, Cmd.none )
@@ -727,7 +737,12 @@ update msg model =
                             )
 
                         PeerSync.Disconnected ->
-                            ( { model | peerConnectionState = PeerSync.NotConnected }, Cmd.none )
+                            ( { model
+                                | peerConnectionState = PeerSync.NotConnected
+                                , sequencerData = (\p -> { p | serverConnectionStatus = PeerSync.NotConnected }) model.sequencerData
+                              }
+                            , Cmd.none
+                            )
 
                 Err error ->
                     ( logError ("Failed to decode peer message:" ++ Json.Decode.errorToString error), Cmd.none )
@@ -740,12 +755,10 @@ update msg model =
             )
 
         BatteryReadingRequested index ->
-            (model, FlowIO.requestBatteryLevel { deviceIndex = index})
+            ( model, FlowIO.requestBatteryLevel { deviceIndex = index } )
 
-
-        BatteryReadingReceived {deviceIndex, level} ->
-            ( model |> updateDevices (updateDevice deviceIndex (setBatteryLevel (Just level))), Cmd.none)
-
+        BatteryReadingReceived { deviceIndex, level } ->
+            ( model |> updateDevices (updateDevice deviceIndex (setBatteryLevel (Just level))), Cmd.none )
 
 
 view : Model -> Browser.Document Msg
@@ -903,19 +916,19 @@ displayDeviceList model =
 
                             batteryIndicator =
                                 UIInput.button Styles.button
-                                  { label =
-                                      case device.batteryLevel of
-                                          Just level ->
-                                              El.row []
-                                                  [ Images.batteryRegular
-                                                  , El.text <| String.fromFloat level
-                                                  , El.text "%"
-                                                  ]
+                                    { label =
+                                        case device.batteryLevel of
+                                            Just level ->
+                                                El.row []
+                                                    [ Images.batteryRegular
+                                                    , El.text <| String.fromFloat level
+                                                    , El.text "%"
+                                                    ]
 
-                                          Nothing ->
-                                              Images.batteryUnknown
-                                  , onPress = Just (BatteryReadingRequested index)
-                                  }
+                                            Nothing ->
+                                                Images.batteryUnknown
+                                    , onPress = Just (BatteryReadingRequested index)
+                                    }
                         in
                         El.column [ El.spacing 5 ]
                             [ El.row [ El.width El.fill ]
@@ -930,7 +943,7 @@ displayDeviceList model =
                             , case device.details |> Maybe.map .services of
                                 Just services ->
                                     El.wrappedRow [ El.spacing 4 ] <|
-                                        (batteryIndicator :: (List.map serviceButton services))
+                                        (batteryIndicator :: List.map serviceButton services)
 
                                 Nothing ->
                                     El.el [] <| El.text "No services"

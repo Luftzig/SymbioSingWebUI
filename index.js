@@ -55,7 +55,7 @@ app.ports.connectToDevice.subscribe(deviceIndex => {
     })
     .then(registerServicesToPorts)
     .catch((e) => {
-      console.log(`Failed to connect to device ${deviceIndex} due to:`, e)
+      console.error(`Failed to connect to device ${deviceIndex} due to:`, e)
       app.ports.listenToDeviceStatus.send({deviceIndex, status: 'disconnected', details: null})
     })
 })
@@ -110,7 +110,7 @@ app.ports.sendCommand.subscribe(({deviceIndex, command}) => {
     return
   }
   device.services.control.sendCommand(command)
-    .then(_ => console.debug("Command", command, "sent to device", deviceIndex))
+    // .then(_ => console.debug("Command", command, "sent to device", deviceIndex))
 })
 
 app.ports.sendStopAll.subscribe((deviceIndex) => {
@@ -120,7 +120,7 @@ app.ports.sendStopAll.subscribe((deviceIndex) => {
     return
   }
   device.services.control.stopAllActions()
-    .then(_ => console.debug("Stop all sent to device", deviceIndex))
+    // .then(_ => console.debug("Stop all sent to device", deviceIndex))
 })
 
 /* Configuration Service */
@@ -174,7 +174,7 @@ app.ports.requestAnalogReadings_.subscribe(({deviceIndex, mode}) => {
     return
   }
   analogService.requestValues(mode.kind, mode.averagingWindowSamples).then(r => {
-    console.debug("readings:", r, ". We expect this value to be sent through the event listener.")
+    // console.debug("readings:", r, ". We expect this value to be sent through the event listener.")
   })
 })
 

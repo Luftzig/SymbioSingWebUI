@@ -175,7 +175,12 @@ type ConverterMsg
 
 type alias CommandsEntry =
     { startTime : TypedTime
-    , commands : List { device : Device, deviceIndex : Int, command : Command }
+    , commands :
+        List
+            { device : Device
+            , deviceIndex : Int
+            , command : Command
+            }
     }
 
 
@@ -210,7 +215,7 @@ type SequencerMsg
     | RoleClicked String
     | DeviceAssignmentChanged String Device Bool
     | PlaySequenceRequested
-    | PlaySequenceStarted (List CommandsEntry) Posix
+    | PlaySequenceStarted Posix
     | PlaySequenceStopped
     | SequencerTick Posix
     | CountdownReceived PeerSync.CountdownData

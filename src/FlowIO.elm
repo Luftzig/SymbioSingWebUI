@@ -429,7 +429,8 @@ setPumpPwm pwm command =
         { command | pumpPwm = pwm }
 
     else
-        Debug.log ("Got PWM value out of range " ++ Debug.toString pwm) command
+        --Debug.log ("Got PWM value out of range " ++ Debug.toString pwm)
+        command
 
 
 setConfiguration : Maybe Configuration -> Device -> Device
@@ -838,7 +839,7 @@ encodePowerOffStatus powerOffStatus =
                 ]
 
         PowerOffStatusUnknown ->
-            Debug.log "PowerOffStatusUnknown should not be sent to JS service!" <| JE.null
+            JE.null
 
 
 
