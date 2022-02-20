@@ -43,6 +43,47 @@ convertHapticScoreSuite =
             , fortissimo = 219
             , fortississimo = 255
             }
+
+        equalTimes expected res =
+            case res of
+                Ok x ->
+                    Array.toList x.time |> Expect.equalLists (expected.time |> Array.toList)
+
+                Err e ->
+                    Expect.fail ""
+
+        equalRoles expected res =
+            case res of
+                Ok x ->
+                    Dict.keys x.instructions |> Expect.equalLists (expected.instructions |> Dict.keys)
+
+                Err e ->
+                    Expect.fail ""
+
+        equalInstructions : Instructions -> Result error Instructions -> Expect.Expectation
+        equalInstructions expected res =
+            let
+                checkInstructions key ins =
+                    Dict.get key ins.instructions
+                        |> Maybe.map Array.toList
+                        |> Maybe.withDefault []
+                        |> Expect.equalLists
+                            (expected.instructions
+                                |> Dict.get key
+                                |> Maybe.map Array.toList
+                                |> Maybe.withDefault []
+                            )
+            in
+            case res of
+                Ok x ->
+                    Expect.all
+                        (Dict.keys expected.instructions
+                            |> List.map checkInstructions
+                        )
+                        x
+
+                Err e ->
+                    Expect.fail ""
     in
     describe "convert haptic score to schedule"
         [ describe "convert single part scores"
@@ -831,6 +872,121 @@ convertHapticScoreSuite =
                         }
                         score
                         |> Expect.equal (Ok expected)
+            , test "trill when trill division doesn't match next note start " <|
+                \_ ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "trill"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes = [ Trill Mezzoforte (baseMeasure.divisionsPerQuarter * 4) ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                , ( "P2"
+                                  , { name = "other instrument"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Actuate Fortissimo (baseMeasure.divisionsPerQuarter * 2)
+                                                , Hold Fortissimo (baseMeasure.divisionsPerQuarter * 2)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        trillInterval =
+                            TypedTime.milliseconds 330
+
+                        inflatePlusTrill =
+                            { action = FlowIO.Inflate
+                            , pumpPwm = defaultDynamics.fortissimo
+                            , ports =
+                                { portsAllClosed
+                                    | port1 = FlowIO.PortOpen
+                                    , port2 = FlowIO.PortOpen
+                                }
+                            }
+
+                        inflateHoldTrill =
+                            { action = FlowIO.Inflate
+                            , pumpPwm = defaultDynamics.fortissimo
+                            , ports =
+                                { portsAllClosed
+                                    | port1 = FlowIO.PortClosed
+                                    , port2 = FlowIO.PortOpen
+                                }
+                            }
+
+                        hold =
+                            { action = FlowIO.Stop
+                            , pumpPwm = 0
+                            , ports = portsAllClosed
+                            }
+
+                        holdPlusTrill =
+                            { action = FlowIO.Inflate
+                            , pumpPwm = defaultDynamics.mezzoforte
+                            , ports =
+                                { portsAllClosed
+                                    | port1 = FlowIO.PortOpen
+                                    , port2 = FlowIO.PortClosed
+                                }
+                            }
+
+                        expected : Instructions
+                        expected =
+                            { time =
+                                Array.fromList
+                                    [ TypedTime.milliseconds 0 -- trill open + actuate
+                                    , TypedTime.milliseconds 330 -- trill close + actuate
+                                    , TypedTime.milliseconds 660 -- trill open + actuate
+                                    , TypedTime.milliseconds 990 -- trill close + actuate
+                                    , TypedTime.milliseconds 1000 -- trill close + hold
+                                    , TypedTime.milliseconds 1320 -- trill open + hold
+                                    , TypedTime.milliseconds 1650 -- trill close + hold
+                                    , TypedTime.milliseconds 1980 -- end of trill - hold
+                                    , TypedTime.milliseconds 2000 -- stop all
+                                    ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            [ inflatePlusTrill -- 0
+                                            , inflateHoldTrill -- 330
+                                            , inflatePlusTrill -- 660
+                                            , inflateHoldTrill -- 990
+                                            , hold -- 1000
+                                            , holdPlusTrill -- 1320
+                                            , hold -- 1650
+                                            , hold -- 1980
+                                            , hold -- 2000
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping =
+                            Dict.fromList
+                                [ ( "P1", ( "role-1", FlowIO.Port1 ) ), ( "P2", ( "role-1", FlowIO.Port2 ) ) ]
+                        , dynamics = defaultDynamics
+                        , trillInterval = trillInterval
+                        }
+                        score
+                        |> Expect.all
+                            [ Expect.ok
+                            , equalTimes expected
+                            , equalRoles expected
+                            , equalInstructions expected
+                            ]
             ]
         ]
 
