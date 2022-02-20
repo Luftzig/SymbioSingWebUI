@@ -776,6 +776,10 @@ encodeCommand inst =
         ]
 
 
+{-| Map a boolean to port value:
+    True -> Port Open
+    False -> Port Closed
+-}
 portFromBool : Bool -> PortState
 portFromBool bool =
     if bool then
