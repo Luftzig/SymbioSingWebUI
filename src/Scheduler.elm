@@ -1193,7 +1193,7 @@ instructionsDecoder =
 
 
 defaultTickIntervalMilliSeconds =
-    5
+    20
 
 
 subscriptions : Model -> Sub SchedulerMsg

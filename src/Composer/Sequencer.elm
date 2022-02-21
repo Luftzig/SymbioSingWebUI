@@ -122,7 +122,7 @@ subscriptions { runStatus } =
             Sub.none
 
         Running _ ->
-            Time.every 5 SequencerTick
+            Time.every 20 SequencerTick
 
 
 transformSequenceModel : Model -> Model
