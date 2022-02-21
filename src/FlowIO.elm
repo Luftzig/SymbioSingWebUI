@@ -36,6 +36,7 @@ port module FlowIO exposing
     , listenToPowerOffStatus
     , portFromBool
     , portToIndex
+    , portsAllClosed
     , queryDeviceConfiguration
     , queryPowerOffStatus
     , requestAnalogReadings
@@ -50,6 +51,7 @@ port module FlowIO exposing
     , serviceToString
     , setAction
     , setAnalogServiceData
+    , setBatteryLevel
     , setConfiguration
     , setControlServiceStatusTo
     , setDetailsTo
@@ -63,7 +65,7 @@ port module FlowIO exposing
     , translateAction
     , translateActionInCommand
     , updateCommandFromStatus
-    , setBatteryLevel)
+    )
 
 import Array exposing (Array)
 import Extra.RemoteService as RemoteService exposing (RemoteService, updateCommand, updateData)
@@ -341,10 +343,15 @@ setControlServiceStatusTo newStatus device =
     { device | controlServiceStatus = Just newStatus }
 
 
+portsAllClosed : { port1 : PortState, port2 : PortState, port3 : PortState, port4 : PortState, port5 : PortState }
+portsAllClosed =
+    { port1 = PortClosed, port2 = PortClosed, port3 = PortClosed, port4 = PortClosed, port5 = PortClosed }
+
+
 defaultCommand : Command
 defaultCommand =
     { action = Inflate
-    , ports = { port1 = PortClosed, port2 = PortClosed, port3 = PortClosed, port4 = PortClosed, port5 = PortClosed }
+    , ports = portsAllClosed
     , pumpPwm = 0
     }
 

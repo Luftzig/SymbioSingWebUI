@@ -142,12 +142,16 @@ transformSequenceToCommands model =
         devices =
             model.availableDevices |> Array.toList
 
+        numParts =
+            List.length model.sequence
+
         commands : List CommandsEntry
         commands =
             model.sequence
                 |> List.mapAccuml transformTimes TypedTime.zero
                 |> Tuple.second
                 |> List.map toCommandsWithRoles
+                |> List.indexedMap removeLastHoldInstruction
                 |> List.concat
                 --|> List.concatMap toCommandsWithRoles
                 |> List.map toCommandsWithDevice
@@ -230,6 +234,30 @@ transformSequenceToCommands model =
                             )
             in
             assignedCommands
+
+        removeLastHoldInstruction : Int -> List ( TypedTime, List ( RoleName, Command ) ) -> List ( TypedTime, List ( RoleName, Command ) )
+        removeLastHoldInstruction index insts =
+            let
+                isStop : ( RoleName, Command ) -> Bool
+                isStop ( _, command ) =
+                    (command.action == FlowIO.Stop)
+                        && (command.ports == FlowIO.portsAllClosed)
+                        && (command.pumpPwm == 0)
+            in
+            if index == numParts - 1 then
+                insts
+
+            else
+                case List.unconsLast insts of
+                    Just ( last, beginning ) ->
+                        if List.all isStop (Tuple.second last) then
+                            beginning
+
+                        else
+                            insts
+
+                    Nothing ->
+                        insts
     in
     commands
 

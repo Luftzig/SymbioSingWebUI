@@ -88,9 +88,10 @@ transformSequenceTests =
                         [ { startTime = TypedTime.milliseconds 0
                           , commands = [ { device = fakeDevice1, deviceIndex = 0, command = defaultCommand } ]
                           }
-                        , { startTime = TypedTime.milliseconds 100
-                          , commands = [ { device = fakeDevice1, deviceIndex = 0, command = { defaultCommand | action = FlowIO.Stop } } ]
-                          }
+                          -- Duplicate instruction should be skipped
+                        --, { startTime = TypedTime.milliseconds 100
+                        --  , commands = [ { device = fakeDevice1, deviceIndex = 0, command = { defaultCommand | action = FlowIO.Stop } } ]
+                        --  }
                         , { startTime = TypedTime.milliseconds 100
                           , commands = [ { device = fakeDevice1, deviceIndex = 0, command = defaultCommand } ]
                           }
@@ -147,12 +148,13 @@ transformSequenceTests =
                                 , { device = fakeDevice2, deviceIndex = 1, command = defaultCommand }
                                 ]
                           }
-                        , { startTime = TypedTime.milliseconds 100
-                          , commands =
-                                [ { device = fakeDevice1, deviceIndex = 0, command = { defaultCommand | action = FlowIO.Stop } }
-                                , { device = fakeDevice2, deviceIndex = 1, command = { defaultCommand | action = FlowIO.Stop } }
-                                ]
-                          }
+                        -- Duplicate command should be skipped
+                        --, { startTime = TypedTime.milliseconds 100
+                        --  , commands =
+                        --        [ { device = fakeDevice1, deviceIndex = 0, command = { defaultCommand | action = FlowIO.Stop } }
+                        --        , { device = fakeDevice2, deviceIndex = 1, command = { defaultCommand | action = FlowIO.Stop } }
+                        --        ]
+                        --  }
                         , { startTime = TypedTime.milliseconds 100
                           , commands =
                                 [ { device = fakeDevice1, deviceIndex = 0, command = defaultCommand }
