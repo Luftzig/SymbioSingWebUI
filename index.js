@@ -24,7 +24,7 @@ app.ports.createDevice.subscribe(() => {
     battery: new BatteryService(),
     control: new ControlService(),
     config: new ConfigService(),
-    powerOff: new PowerOffService(),
+    // powerOff: new PowerOffService(),
     // analog: new AnalogService(),
   })
   flowIoDevices.push(flowIo)
@@ -68,10 +68,10 @@ const registerServicesToPorts = ({device, deviceIndex}) => {
   device.services.config.getConfiguration().then(config =>
     app.ports.listenToDeviceConfiguration_.send({deviceIndex, configuration: config})
   )
-  device.services.powerOff.getRemainingTime().then(status =>
+  device.services.powerOff?.getRemainingTime()?.then(status =>
     app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
   )
-  device.services.powerOff.onStatusChanged(status =>
+  device.services.powerOff?.onStatusChanged(status =>
     app.ports.listenToPowerOffStatus_.send({deviceIndex, status})
   )
   device.services.analog?.onValuesChange(values =>
