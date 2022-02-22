@@ -744,7 +744,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                     in
                     case ( times, intermediates ) of
                         ( t :: restTimes, inter :: restIntermediates ) ->
-                            if t |> TypedTime.equalWithin (TypedTime.milliseconds 4) inter.startTimeMs then
+                            if t |> TypedTime.equalWithin (TypedTime.milliseconds 0.1) inter.startTimeMs then
                                 -- Nothing to do! They match
                                 inter :: fillInstructionLists restTimes (Just inter) restIntermediates
 
