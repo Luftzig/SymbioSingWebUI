@@ -237,8 +237,10 @@ releaseButton onMouseDown onMouseUp =
 stopButton onMouseDown onMouseUp =
     clickAndHoldButton onMouseDown onMouseUp stopIcon "Stop"
 
+
 actuateButton onMouseDown onMouseUp =
     clickAndHoldButton onMouseDown onMouseUp (Images.svgElement 32 [] Images.actuateIcon) "Actuate"
+
 
 externalClass : String -> Element.Attribute msg
 externalClass class =
@@ -413,3 +415,9 @@ fontSize =
     , large = Font.size 18
     , huge = Font.size 24
     }
+
+
+wrapWordBreak =
+    [ Element.htmlAttribute <| Html.Attributes.style "word-wrap" "break-word"
+    , Element.htmlAttribute <| Html.Attributes.style "overflow-wrap" "break-word"
+    ]

@@ -24,11 +24,13 @@ import Extra.Array as Array
 import Extra.Dict as Dict
 import Extra.TypedTime as TypedTime exposing (TypedTime)
 import File exposing (File)
+import File.Download
 import File.Select
 import FlowIO exposing (Command, Device, DeviceId, encodeCommand, translateActionInCommand)
 import Html.Attributes
 import Images
 import Json.Decode as JD
+import Json.Encode
 import List.Extra as List
 import LocalStorage
 import Messages exposing (..)
@@ -317,10 +319,37 @@ update msg model =
             ( { model | dialog = SaveSequenceDialog "" }, ShowDialog, Cmd.none )
 
         DownloadSequence ->
-            ( model, LogError "Download sequence not supported yet", Cmd.none )
+            ( model
+            , NoMessage
+            , File.Download.string "sequence.json"
+                "application/json"
+                (Json.Encode.encode 2 (encodeSequence model.sequence))
+            )
 
         RequestSequenceUpload ->
-            ( model, LogError "Uploading sequences not supported yet", Cmd.none )
+            ( model, NoMessage, File.Select.file [ "application/json", "*.json", ".json" ] SequenceFileSelected )
+
+        SequenceFileSelected file ->
+            ( model, NoMessage, Task.perform SequenceFileRead <| File.toString file )
+
+        SequenceFileRead string ->
+            let
+                decodeResult =
+                    JD.decodeString sequenceDecoder string
+            in
+            case decodeResult of
+                Ok sequence ->
+                    ( transformSequenceModel
+                        { model
+                            | sequence = sequence
+                            , availableParts = Dict.union (Dict.fromList sequence) model.availableParts
+                        }
+                    , NoMessage
+                    , Cmd.none
+                    )
+
+                Err e ->
+                    ( model, LogError ("Loading sequence file failed because of: " ++ JD.errorToString e), Cmd.none )
 
         CloseDialog ->
             ( { model | dialog = NoDialog }, HideDialog, Cmd.none )
@@ -667,7 +696,7 @@ viewSequence { sequence, roleAssignments } =
                         ]
                     ]
                 , column [ width <| fillPortion 4, centerX, Font.semiBold ]
-                    [ text partName
+                    [ el Styles.wrapWordBreak <| text partName
                     , row [ Styles.fontSize.small, spacing 10 ] partRoles
                     ]
                 , button (Styles.button ++ [ alignRight ])
@@ -709,10 +738,6 @@ viewAvailableParts model =
                     , label = el [] <| text "Copy from Converter"
                     }
                 , button (Styles.button ++ [])
-                    { onPress = Just LoadFromStorageRequested
-                    , label = el [] <| text "Load"
-                    }
-                , button (Styles.button ++ [])
                     { onPress = Just RequestUploadInstructions
                     , label = el [] <| text "Upload"
                     }
@@ -738,8 +763,8 @@ viewAvailableParts model =
             in
             column (Styles.card ++ Styles.colorsPrimary ++ [ fullWidth, padding 5, spacing 10 ])
                 [ row [ spacing 5, fullWidth ]
-                    [ el [ Font.bold, padding 4 ] <| text partName
-                    , el [ Font.italic, padding 4 ] <| text lengthString
+                    [ el (Styles.wrapWordBreak ++ [ Font.bold, padding 4, width <| fillPortion 3 ]) <| text partName
+                    , el [ Font.italic, padding 4, width <| fillPortion 2 ] <| text lengthString
                     , text "Roles: "
                     , text <| String.fromInt <| List.length roles
                     , button (Styles.button ++ [ alignRight ])
@@ -831,10 +856,6 @@ viewControls model =
                 ]
          )
             ++ [ button ((width <| fillPortion 1) :: Styles.button)
-                    { label = text "Save"
-                    , onPress = Just OpenSaveSequenceDialog
-                    }
-               , button ((width <| fillPortion 1) :: Styles.button)
                     { label = text "Download"
                     , onPress = Just DownloadSequence
                     }
@@ -923,3 +944,14 @@ viewDialog model =
                    )
                 |> column []
                 |> dialogBase (roleName ++ " Assignments")
+
+
+encodeSequence : List ( String, Instructions ) -> Json.Encode.Value
+encodeSequence list =
+    Json.Encode.list (\( a, b ) -> Json.Encode.object [ ( "partName", Json.Encode.string a ), ( "schedule", Scheduler.encodeInstructions b ) ]) list
+
+
+sequenceDecoder : JD.Decoder (List ( String, Instructions ))
+sequenceDecoder =
+    JD.list
+        (JD.map2 Tuple.pair (JD.field "partName" JD.string) (JD.field "schedule" instructionsDecoder))

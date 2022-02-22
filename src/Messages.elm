@@ -207,6 +207,8 @@ type SequencerMsg
     | OpenSaveSequenceDialog
     | DownloadSequence
     | RequestSequenceUpload
+    | SequenceFileSelected File
+    | SequenceFileRead String
     | CloseDialog
     | AddPartToSequence String
     | TogglePartDetails String
