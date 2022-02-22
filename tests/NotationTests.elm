@@ -43,6 +43,55 @@ convertHapticScoreSuite =
             , fortissimo = 219
             , fortississimo = 255
             }
+
+        equalTimes expected res =
+            case res of
+                Ok x ->
+                    Array.toList x.time |> Expect.equalLists (expected.time |> Array.toList)
+
+                Err e ->
+                    Expect.fail ""
+
+        equalRoles expected res =
+            case res of
+                Ok x ->
+                    Dict.keys x.instructions |> Expect.equalLists (expected.instructions |> Dict.keys)
+
+                Err e ->
+                    Expect.fail ""
+
+        equalInstructions : Instructions -> Result error Instructions -> Expect.Expectation
+        equalInstructions expected res =
+            let
+                checkInstructions key ins =
+                    Dict.get key ins.instructions
+                        |> Maybe.map Array.toList
+                        |> Maybe.withDefault []
+                        |> Expect.equalLists
+                            (expected.instructions
+                                |> Dict.get key
+                                |> Maybe.map Array.toList
+                                |> Maybe.withDefault []
+                            )
+            in
+            case res of
+                Ok x ->
+                    Expect.all
+                        (Dict.keys expected.instructions
+                            |> List.map checkInstructions
+                        )
+                        x
+
+                Err e ->
+                    Expect.fail ""
+
+        compareInstructionsTo expected =
+            Expect.all
+                [ Expect.ok
+                , equalTimes expected
+                , equalRoles expected
+                , equalInstructions expected
+                ]
     in
     describe "convert haptic score to schedule"
         [ describe "convert single part scores"
@@ -144,7 +193,7 @@ convertHapticScoreSuite =
                                     [ ( "role-1"
                                       , Array.fromList
                                             [ { commandStop | pumpPwm = 0 }
-                                            , { action = FlowIO.Inflate
+                                            , { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.fortississimo
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
@@ -190,7 +239,7 @@ convertHapticScoreSuite =
                                 Dict.fromList
                                     [ ( "role-2"
                                       , Array.fromList
-                                            [ { action = FlowIO.Inflate
+                                            [ { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.fortississimo
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
@@ -248,7 +297,7 @@ convertHapticScoreSuite =
                                 Dict.fromList
                                     [ ( "role-2"
                                       , Array.fromList
-                                            [ { action = FlowIO.Inflate
+                                            [ { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.fortississimo
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
@@ -298,7 +347,7 @@ convertHapticScoreSuite =
                             TypedTime.milliseconds 2000
 
                         inflateInstructions =
-                            { action = FlowIO.Inflate
+                            { action = FlowIO.Actuate
                             , pumpPwm = defaultDynamics.mezzoforte
                             , ports =
                                 { portsAllClosed | port1 = FlowIO.PortOpen }
@@ -375,7 +424,7 @@ convertHapticScoreSuite =
                             TypedTime.milliseconds 500
 
                         inflateInstructions =
-                            { action = FlowIO.Inflate
+                            { action = FlowIO.Actuate
                             , pumpPwm = defaultDynamics.mezzoforte
                             , ports =
                                 { portsAllClosed | port1 = FlowIO.PortOpen }
@@ -508,7 +557,7 @@ convertHapticScoreSuite =
                                 Dict.fromList
                                     [ ( "role-1"
                                       , Array.fromList
-                                            [ { action = FlowIO.Inflate
+                                            [ { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.fortississimo
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen, port2 = FlowIO.PortOpen }
@@ -574,12 +623,12 @@ convertHapticScoreSuite =
                                 Dict.fromList
                                     [ ( "role-1"
                                       , Array.fromList
-                                            [ { action = FlowIO.Inflate
+                                            [ { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.fortississimo
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
-                                            , { action = FlowIO.Inflate
+                                            , { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.mezzoforte
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
@@ -670,17 +719,17 @@ convertHapticScoreSuite =
                                            p2 = hold fff - inflate mf - hold mf - hold mf - release f
                                         -}
                                       , Array.fromList
-                                            [ { action = FlowIO.Inflate
+                                            [ { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.fortississimo
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
                                               }
-                                            , { action = FlowIO.Inflate
+                                            , { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.mezzoforte
                                               , ports =
                                                     { portsAllClosed | port2 = FlowIO.PortOpen }
                                               }
-                                            , { action = FlowIO.Inflate
+                                            , { action = FlowIO.Actuate
                                               , pumpPwm = defaultDynamics.mezzoforte
                                               , ports =
                                                     { portsAllClosed | port1 = FlowIO.PortOpen }
@@ -775,7 +824,7 @@ convertHapticScoreSuite =
                                                 |> List.map
                                                     (\i ->
                                                         if (i |> modBy 2) == 0 then
-                                                            { action = FlowIO.Inflate
+                                                            { action = FlowIO.Actuate
                                                             , pumpPwm = defaultDynamics.fortissimo
                                                             , ports =
                                                                 { portsAllClosed
@@ -785,7 +834,7 @@ convertHapticScoreSuite =
                                                             }
 
                                                         else
-                                                            { action = FlowIO.Inflate
+                                                            { action = FlowIO.Actuate
                                                             , pumpPwm = defaultDynamics.fortissimo
                                                             , ports =
                                                                 { portsAllClosed
@@ -799,7 +848,7 @@ convertHapticScoreSuite =
                                                         |> List.map
                                                             (\i ->
                                                                 if (i |> modBy 2) == 0 then
-                                                                    { action = FlowIO.Inflate
+                                                                    { action = FlowIO.Actuate
                                                                     , pumpPwm = defaultDynamics.mezzoforte
                                                                     , ports =
                                                                         { portsAllClosed
@@ -831,6 +880,219 @@ convertHapticScoreSuite =
                         }
                         score
                         |> Expect.equal (Ok expected)
+            , test "trill when trill division doesn't match next note start " <|
+                \_ ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "trill"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes = [ Trill Mezzoforte (baseMeasure.divisionsPerQuarter * 4) ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                , ( "P2"
+                                  , { name = "other instrument"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Actuate Fortissimo (baseMeasure.divisionsPerQuarter * 2)
+                                                , Hold Fortissimo (baseMeasure.divisionsPerQuarter * 2)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        trillInterval =
+                            TypedTime.milliseconds 330
+
+                        inflatePlusTrill =
+                            { action = FlowIO.Actuate
+                            , pumpPwm = defaultDynamics.fortissimo
+                            , ports =
+                                { portsAllClosed
+                                    | port1 = FlowIO.PortOpen
+                                    , port2 = FlowIO.PortOpen
+                                }
+                            }
+
+                        inflateHoldTrill =
+                            { action = FlowIO.Actuate
+                            , pumpPwm = defaultDynamics.fortissimo
+                            , ports =
+                                { portsAllClosed
+                                    | port1 = FlowIO.PortClosed
+                                    , port2 = FlowIO.PortOpen
+                                }
+                            }
+
+                        hold =
+                            { action = FlowIO.Stop
+                            , pumpPwm = 0
+                            , ports = portsAllClosed
+                            }
+
+                        holdPlusTrill =
+                            { action = FlowIO.Actuate
+                            , pumpPwm = defaultDynamics.mezzoforte
+                            , ports =
+                                { portsAllClosed
+                                    | port1 = FlowIO.PortOpen
+                                    , port2 = FlowIO.PortClosed
+                                }
+                            }
+
+                        expected : Instructions
+                        expected =
+                            { time =
+                                Array.fromList
+                                    [ TypedTime.milliseconds 0 -- trill open + actuate
+                                    , TypedTime.milliseconds 330 -- trill close + actuate
+                                    , TypedTime.milliseconds 660 -- trill open + actuate
+                                    , TypedTime.milliseconds 990 -- trill close + actuate
+                                    , TypedTime.milliseconds 1000 -- trill close + hold
+                                    , TypedTime.milliseconds 1320 -- trill open + hold
+                                    , TypedTime.milliseconds 1650 -- trill close + hold
+                                    , TypedTime.milliseconds 1980 -- end of trill - hold
+                                    , TypedTime.milliseconds 2000 -- stop all
+                                    ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            [ inflatePlusTrill -- 0
+                                            , inflateHoldTrill -- 330
+                                            , inflatePlusTrill -- 660
+                                            , inflateHoldTrill -- 990
+                                            , hold -- 1000
+                                            , holdPlusTrill -- 1320
+                                            , hold -- 1650
+                                            , hold -- 1980
+                                            , hold -- 2000
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping =
+                            Dict.fromList
+                                [ ( "P1", ( "role-1", FlowIO.Port1 ) ), ( "P2", ( "role-1", FlowIO.Port2 ) ) ]
+                        , dynamics = defaultDynamics
+                        , trillInterval = trillInterval
+                        }
+                        score
+                        |> compareInstructionsTo expected
+            , test "hard trill" <|
+                \_ ->
+                    let
+                        score : HapticScore
+                        score =
+                            Dict.fromList
+                                [ ( "P1"
+                                  , { name = "trill"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes = [ HardTrill Mezzoforte (baseMeasure.divisionsPerQuarter * 4) ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                , ( "P2"
+                                  , { name = "other instrument"
+                                    , measures =
+                                        [ { baseMeasure
+                                            | notes =
+                                                [ Actuate Fortissimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Hold Fortissimo (baseMeasure.divisionsPerQuarter * 1)
+                                                , Rest Fortissimo (baseMeasure.divisionsPerQuarter * 2)
+                                                ]
+                                          }
+                                        ]
+                                    }
+                                  )
+                                ]
+
+                        inflate =
+                            { action = FlowIO.Actuate
+                            , pumpPwm = defaultDynamics.fortissimo
+                            , ports =
+                                { portsAllClosed | port1 = FlowIO.PortOpen, port2 = FlowIO.PortClosed }
+                            }
+
+                        port1Open =
+                            { portsAllClosed | port1 = FlowIO.PortOpen }
+
+                        port1and2Open =
+                            { portsAllClosed | port1 = FlowIO.PortOpen, port2 = FlowIO.PortOpen }
+
+                        expected : Instructions
+                        expected =
+                            { time =
+                                Array.fromList
+                                    -- 1 Actuate                    -- P1         P2
+                                    [ TypedTime.milliseconds 0 -- T-Inflate  Actuate
+                                    , TypedTime.milliseconds 250 -- T-Release  Hold
+
+                                    -- 2 Hold
+                                    , TypedTime.milliseconds 500 -- T-Inflate  Hold
+                                    , TypedTime.milliseconds 750 -- T-Release  Hold
+
+                                    -- 3 Rest
+                                    , TypedTime.milliseconds 1000 -- T-Inflate Hold
+                                    , TypedTime.milliseconds 1250 -- T-Release Release
+
+                                    -- 4 Rest
+                                    , TypedTime.milliseconds 1500 -- T-Inflate Hold
+                                    , TypedTime.milliseconds 1750 -- T-Release Release
+
+                                    -- 1 Rest
+                                    , TypedTime.milliseconds 2000 -- Stop
+                                    ]
+                            , instructions =
+                                Dict.fromList
+                                    [ ( "role-1"
+                                      , Array.fromList
+                                            -- 1 Actuate                    -- P1         P2
+                                            [ { action = FlowIO.Actuate, pumpPwm = defaultDynamics.fortissimo, ports = port1and2Open }
+                                            , { action = FlowIO.Release, pumpPwm = defaultDynamics.fortissimo, ports = port1Open }
+
+                                            -- - 2 Hold
+                                            , { action = FlowIO.Actuate, pumpPwm = defaultDynamics.mezzoforte, ports = port1Open }
+                                            , { action = FlowIO.Release, pumpPwm = 0, ports = port1Open }
+
+                                            -- - 3 Rest
+                                            , { action = FlowIO.Actuate, pumpPwm = defaultDynamics.mezzoforte, ports = port1Open }
+                                            , { action = FlowIO.Release, pumpPwm = 0, ports = port1and2Open }
+
+                                            -- - 4 Rest
+                                            , { action = FlowIO.Actuate, pumpPwm = defaultDynamics.mezzoforte, ports = port1Open }
+                                            , { action = FlowIO.Release, pumpPwm = 0, ports = port1and2Open }
+
+                                            -- 1 Rest
+                                            , { action = FlowIO.Stop, pumpPwm = 0, ports = portsAllClosed }
+                                            ]
+                                      )
+                                    ]
+                            }
+                    in
+                    Notation.scoreToSchedule
+                        { bpm = 120
+                        , roleMapping =
+                            Dict.fromList
+                                [ ( "P1", ( "role-1", FlowIO.Port1 ) ), ( "P2", ( "role-1", FlowIO.Port2 ) ) ]
+                        , dynamics = defaultDynamics
+                        , trillInterval = TypedTime.milliseconds 250
+                        }
+                        score
+                        |> compareInstructionsTo expected
             ]
         ]
 

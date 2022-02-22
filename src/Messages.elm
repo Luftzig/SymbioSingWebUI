@@ -267,6 +267,7 @@ type HapticNote
     | Hold Dynamic Timing
     | Actuate Dynamic Timing
     | Trill Dynamic Timing -- Used only for the palm
+    | HardTrill Dynamic Timing -- Used only for the palm
 
 
 type alias Timing =

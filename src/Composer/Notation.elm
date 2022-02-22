@@ -19,7 +19,21 @@ import Extra.Xml exposing (oneOfTags, tagPath)
 import FlowIO exposing (Action, Command, PortState, portToIndex)
 import List.Extra
 import Maybe.Extra as Maybe
-import Messages exposing (Dynamic(..), HapticNote(..), HapticPart, HapticScore, Instructions, Measure, PartID, PartialMeasure, RoleName, RolesInstructions, Signature, Timing)
+import Messages
+    exposing
+        ( Dynamic(..)
+        , HapticNote(..)
+        , HapticPart
+        , HapticScore
+        , Instructions
+        , Measure
+        , PartID
+        , PartialMeasure
+        , RoleName
+        , RolesInstructions
+        , Signature
+        , Timing
+        )
 import Regex
 import Result.Extra as Result
 import Set
@@ -365,8 +379,7 @@ parseMusicXmlWith _ input =
                         Ok (Hold Pianississimo duration_)
 
                     else if hasTrill then
-                        -- TODO: Should we have a default value?
-                        Ok (Trill (lastDynamic |> Maybe.withDefault Mezzopiano) duration_)
+                        Ok (HardTrill (lastDynamic |> Maybe.withDefault Mezzopiano) duration_)
 
                     else
                         case lastDynamic of
@@ -421,6 +434,8 @@ type IntermediateAction
     = Inflate
     | Release
     | NoChange
+    | TrillRelease
+    | TrillInflate
 
 
 type alias IntermediateRepr =
@@ -561,6 +576,31 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
 
                                         else
                                             NoChange
+                                    )
+                                |> List.map
+                                    (\action ->
+                                        { duration = trillInterval
+                                        , action = action
+                                        , dynamic = dynamic
+                                        , measureNumber = number
+                                        , numberInMeasure = noteIndex + 1
+                                        }
+                                    )
+
+                        HardTrill dynamic t ->
+                            let
+                                trills =
+                                    toDuration t
+                                        |> TypedTime.divideByInterval trillInterval
+                            in
+                            List.range 0 (floor trills - 1)
+                                |> List.map
+                                    (\i ->
+                                        if (i |> modBy 2) == 0 then
+                                            TrillInflate
+
+                                        else
+                                            TrillRelease
                                     )
                                 |> List.map
                                     (\action ->
@@ -740,6 +780,17 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                                     List.filter (.action >> (==) Inflate) actions
                                         |> List.indexedMap Tuple.pair
 
+                                trillReleaseActions =
+                                    List.filter (.action >> (==) TrillRelease) actions
+                                        |> List.indexedMap Tuple.pair
+
+                                trillInflateActions =
+                                    List.filter (.action >> (==) TrillInflate) actions
+                                        |> List.indexedMap Tuple.pair
+
+                                has =
+                                    not << List.isEmpty
+
                                 errorCtx =
                                     List.head actions
                                         |> (\repr ->
@@ -760,26 +811,64 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                                         |> List.map noteErrorString
                                         |> String.join ", "
                             in
-                            case ( List.isEmpty releaseActions, List.isEmpty inflateActions ) of
-                                ( True, True ) ->
-                                    Ok NoChange
-
+                            {- Truth table:
+                               Has Release | Has Inflate | Has Trill-Release | Has Trill-Inflate | Result
+                               No          | No          | No                | No                | NoChange
+                               No          | No          | Yes               | No                | TrillRelease
+                               Yes         | No          | No                | No                | Release
+                               Yes         | No          | Yes               | No                | TrillRelease
+                               No          | Yes         | No                | No                | Inflate
+                               No          | Yes         | Yes               | No                | TrillRelease
+                               Yes         | Yes         | No                | No                | Error
+                               Yes         | Yes         | Yes               | No                | Error
+                               No          | No          | No                | Yes               | TrillInflate
+                               No          | No          | Yes               | Yes               | Error
+                               Yes         | No          | No                | Yes               | TrillInflate
+                               Yes         | No          | Yes               | Yes               | Error
+                               No          | Yes         | No                | Yes               | TrillInflate
+                               No          | Yes         | Yes               | Yes               | Error
+                               Yes         | Yes         | No                | Yes               | Error
+                               Yes         | Yes         | Yes               | Yes               | Error
+                            -}
+                            case ( has trillReleaseActions, has trillInflateActions ) of
                                 ( False, False ) ->
+                                    case ( has releaseActions, has inflateActions ) of
+                                        ( False, False ) ->
+                                            Ok NoChange
+
+                                        ( False, True ) ->
+                                            Ok Inflate
+
+                                        ( True, False ) ->
+                                            Ok Release
+
+                                        ( True, True ) ->
+                                            Err
+                                                ( Just p1
+                                                , errorCtx
+                                                    ++ " I found conflicting actions: Release in notes ["
+                                                    ++ conflictingError releaseActions
+                                                    ++ "] and Inflate in ["
+                                                    ++ conflictingError inflateActions
+                                                    ++ "]"
+                                                )
+
+                                ( False, True ) ->
+                                    Ok TrillInflate
+
+                                ( True, False ) ->
+                                    Ok TrillRelease
+
+                                ( True, True ) ->
                                     Err
                                         ( Just p1
                                         , errorCtx
-                                            ++ " I found conflicting actions: Release in notes ["
-                                            ++ conflictingError releaseActions
-                                            ++ "] and Inflate in ["
-                                            ++ conflictingError inflateActions
+                                            ++ " I found conflicting actions: Trill-Release in notes ["
+                                            ++ conflictingError trillReleaseActions
+                                            ++ "] and Trill-Inflate in ["
+                                            ++ conflictingError trillInflateActions
                                             ++ "]"
                                         )
-
-                                ( True, False ) ->
-                                    Ok Inflate
-
-                                ( False, True ) ->
-                                    Ok Release
 
                         toFlowIOAction : IntermediateAction -> FlowIO.Action
                         toFlowIOAction action =
@@ -788,16 +877,22 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                                     FlowIO.Stop
 
                                 Inflate ->
-                                    FlowIO.Inflate
+                                    FlowIO.Actuate
 
                                 Release ->
                                     FlowIO.Release
+
+                                TrillRelease ->
+                                    FlowIO.Release
+
+                                TrillInflate ->
+                                    FlowIO.Actuate
 
                         settleDynamic : List ( IntermediateAction, Dynamic ) -> Int
                         settleDynamic dyns =
                             let
                                 actuationOnly =
-                                    dyns |> List.filter (\( action, _ ) -> action == Inflate)
+                                    dyns |> List.filter (\( action, _ ) -> action == Inflate || action == TrillInflate)
 
                                 maxDynamic =
                                     actuationOnly
@@ -807,6 +902,53 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                             in
                             maxDynamic
                                 |> Maybe.withDefault 0
+
+                        decidePortState : IntermediateAction -> IntermediateAction -> PortState
+                        decidePortState requested chosen =
+                            case ( requested, chosen ) of
+                                ( _, NoChange ) ->
+                                    FlowIO.PortClosed
+
+                                ( NoChange, _ ) ->
+                                    FlowIO.PortClosed
+
+                                ( Inflate, Inflate ) ->
+                                    FlowIO.PortOpen
+
+                                ( Release, Release ) ->
+                                    FlowIO.PortOpen
+
+                                ( TrillRelease, TrillRelease ) ->
+                                    FlowIO.PortOpen
+
+                                (TrillInflate, TrillInflate) ->
+                                    FlowIO.PortOpen
+
+                                (Inflate, TrillRelease) ->
+                                    FlowIO.PortClosed
+
+                                (Release, TrillRelease) ->
+                                    FlowIO.PortOpen
+
+                                (Inflate, TrillInflate) ->
+                                    FlowIO.PortOpen
+
+                                (Release, TrillInflate) ->
+                                    FlowIO.PortClosed
+
+                                -- Remaining options are impossible from `settleAction`:
+                                --    ( Inflate, Release )             - Contradicting
+                                --    ( Release, Inflate )             - Contradicting
+                                --    ( TrillRelease, Inflate )        - TrillRelease > Inflate
+                                --    ( TrillRelease, Release )        - TrillRelease > Release
+                                --    ( TrillRelease, TrillInflate )   - Contradicting
+                                --    ( TrillInflate, Inflate )        - TrillInflate > Inflate
+                                --    ( TrillInflate, Release )        - TrillInflate > Release
+                                --    ( TrillInflate, TrillRelease )   - Contradicting
+
+                                _ ->
+                                    FlowIO.PortClosed
+
                     in
                     Result.map
                         (\settledAction ->
@@ -823,11 +965,11 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                             { action = toFlowIOAction settledAction
                             , pumpPwm = settledDynamic
                             , ports =
-                                { port1 = FlowIO.portFromBool (settledAction /= NoChange && p1.action == settledAction)
-                                , port2 = FlowIO.portFromBool (settledAction /= NoChange && p2.action == settledAction)
-                                , port3 = FlowIO.portFromBool (settledAction /= NoChange && p3.action == settledAction)
-                                , port4 = FlowIO.portFromBool (settledAction /= NoChange && p4.action == settledAction)
-                                , port5 = FlowIO.portFromBool (settledAction /= NoChange && p5.action == settledAction)
+                                { port1 = decidePortState p1.action settledAction
+                                , port2 = decidePortState p2.action settledAction
+                                , port3 = decidePortState p3.action settledAction
+                                , port4 = decidePortState p4.action settledAction
+                                , port5 = decidePortState p5.action settledAction
                                 }
                             }
                         )
@@ -856,7 +998,7 @@ scoreToSchedule { bpm, roleMapping, dynamics, trillInterval } hapticScore =
                         (\( inter, errorMessage ) ->
                             ( case inter of
                                 Just interError ->
-                                    [port1, port2, port3, port4, port5]
+                                    [ port1, port2, port3, port4, port5 ]
                                         |> List.map (\innerList -> List.filter (\item -> item.measureNumber == interError.measureNumber) innerList)
 
                                 Nothing ->
