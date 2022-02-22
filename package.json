@@ -21,7 +21,7 @@
     "test-watch": "elm-test-rs --watch tests/*.elm"
   },
   "dependencies": {
-    "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#bdf18d5e93007e819ba8dd2d79b1170f3c84b9f7",
+    "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#4be505e52b5e4590f575c3522e77e6680e810fe0",
     "global": "^4.4.0",
     "socket.io-client": "^4.4.1"
   },
