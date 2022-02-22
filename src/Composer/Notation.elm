@@ -379,8 +379,7 @@ parseMusicXmlWith _ input =
                         Ok (Hold Pianississimo duration_)
 
                     else if hasTrill then
-                        -- TODO: Should we have a default value?
-                        Ok (Trill (lastDynamic |> Maybe.withDefault Mezzopiano) duration_)
+                        Ok (HardTrill (lastDynamic |> Maybe.withDefault Mezzopiano) duration_)
 
                     else
                         case lastDynamic of
