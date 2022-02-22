@@ -45,11 +45,15 @@ app.ports.connectToDevice.subscribe(deviceIndex => {
       }
       app.ports.listenToDeviceStatus.send(deviceConnectionStatus)
       device.connection.subscribe("disconnected", (_) => {
-        app.ports.listenToDeviceStatus.send({
-          deviceIndex,
-          status: 'disconnected',
-          details: null
-        })
+        console.log("Device", deviceIndex, "disconnected, attempting to reconnect")
+        device.reconnect()
+          .catch(() => {
+            app.ports.listenToDeviceStatus.send({
+              deviceIndex,
+              status: 'disconnected',
+              details: null
+            })
+          })
       })
       return {device, deviceIndex}
     })
