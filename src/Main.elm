@@ -53,6 +53,7 @@ type alias Model =
     , peerName : String
     , peerMessages : List String
     , peerConnectionState : PeerSync.PeerSyncState
+    , tickMs : Float
     }
 
 
@@ -105,6 +106,7 @@ initModel { width, height } =
     , peerName = "SymbioSing 1"
     , peerMessages = []
     , peerConnectionState = PeerSync.NotConnected
+    , tickMs = 20
     }
 
 
@@ -391,10 +393,10 @@ update msg model =
             in
             case ( controlServiceStatus, maybeDevice ) of
                 ( Err error, _ ) ->
-                    (logError ("Failed to decode control service status. Error: " ++ Json.Decode.errorToString error) , Cmd.none )
+                    ( logError ("Failed to decode control service status. Error: " ++ Json.Decode.errorToString error), Cmd.none )
 
                 ( _, Nothing ) ->
-                    (logError ("Status update for device " ++ String.fromInt deviceIndex ++ " received, but device does not exist") , Cmd.none )
+                    ( logError ("Status update for device " ++ String.fromInt deviceIndex ++ " received, but device does not exist"), Cmd.none )
 
                 ( Ok newStatus, Just _ ) ->
                     let
@@ -561,7 +563,7 @@ update msg model =
             ( model, sendPowerOffStatus deviceIndex powerOffStatus )
 
         NoAction explanation ->
-            ( logError ("Received a no action Msg: " ++ explanation) , Cmd.none )
+            ( logError ("Received a no action Msg: " ++ explanation), Cmd.none )
 
         SensorReadingReceived deviceIndex result ->
             result
@@ -759,6 +761,14 @@ update msg model =
 
         BatteryReadingReceived { deviceIndex, level } ->
             ( model |> updateDevices (updateDevice deviceIndex (setBatteryLevel (Just level))), Cmd.none )
+
+        TickMsChanged float ->
+            ( { model
+                | sequencerData = (\s -> { s | tickMs = float }) model.sequencerData
+                , scheduler = (\s -> { s | tickMs = float }) model.scheduler
+              }
+            , Cmd.none
+            )
 
 
 view : Model -> Browser.Document Msg
@@ -1539,7 +1549,7 @@ displayServices { devices, servicesPanel } =
 
 
 header : Model -> El.Element Msg
-header { savedMenuState, savedSchedules, peerName, peerConnectionState, peerMessages } =
+header { savedMenuState, savedSchedules, peerName, peerConnectionState, peerMessages, sequencerData } =
     let
         savedMenu =
             case savedMenuState of
@@ -1605,17 +1615,37 @@ header { savedMenuState, savedSchedules, peerName, peerConnectionState, peerMess
           <|
             El.text "SymbioSing Control Panel"
         , El.el [ El.width <| El.fillPortion 2 ] El.none
-        , El.el [ El.alignRight, El.below savedMenu, El.width <| El.fillPortion 2 ] <|
-            UIInput.button (Styles.button ++ [ El.alignRight ])
-                { onPress = Just ToggleSavedMenu
-                , label =
-                    case savedMenuState of
-                        PanelFolded ->
-                            El.text "Saved Schedules ◀️"
+        , UIInput.slider
+            [ El.alignRight
+            , El.width <| El.fillPortion 2
+            , UIBackground.color palette.accent
+            , UIBorder.rounded 10
+            ]
+            { label =
+                UIInput.labelLeft [ El.padding 5 ] <|
+                    El.text <|
+                        "Tick "
+                            ++ String.fromFloat sequencerData.tickMs
+                            ++ "ms"
+            , onChange = TickMsChanged
+            , max = 25
+            , min = 5
+            , step = Just 5
+            , thumb = UIInput.defaultThumb
+            , value = sequencerData.tickMs
+            }
 
-                        PanelOpen ->
-                            El.text "Saved Schedules ⏏️"
-                }
+        --, El.el [ El.alignRight, El.below savedMenu, El.width <| El.fillPortion 2 ] <|
+        --    UIInput.button (Styles.button ++ [ El.alignRight ])
+        --        { onPress = Just ToggleSavedMenu
+        --        , label =
+        --            case savedMenuState of
+        --                PanelFolded ->
+        --                    El.text "Saved Schedules ◀️"
+        --
+        --                PanelOpen ->
+        --                    El.text "Saved Schedules ⏏️"
+        --        }
         ]
 
 

@@ -53,6 +53,7 @@ type alias Model =
     , runStatus : RunStatus
     , commands : List CommandsEntry
     , serverConnectionStatus : PeerSyncState
+    , tickMs : Float
     }
 
 
@@ -96,6 +97,7 @@ init =
     , runStatus = NotRunning
     , commands = []
     , serverConnectionStatus = PeerSync.NotConnected
+    , tickMs = 20
     }
 
 
@@ -115,7 +117,7 @@ type OutgoingMsg
 
 
 subscriptions : Model -> Sub SequencerMsg
-subscriptions { runStatus } =
+subscriptions { runStatus, tickMs } =
     case runStatus of
         NotRunning ->
             Sub.none
@@ -124,7 +126,7 @@ subscriptions { runStatus } =
             Sub.none
 
         Running _ ->
-            Time.every 20 SequencerTick
+            Time.every tickMs SequencerTick
 
 
 transformSequenceModel : Model -> Model

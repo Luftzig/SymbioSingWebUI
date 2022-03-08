@@ -64,6 +64,7 @@ type Msg
     | SendPeerCommand PeerSyncCommand
     | PeerMessageReceived (Result Json.Decode.Error PeerSyncMessage)
     | CountdownRequested Float
+    | TickMsChanged Float
 
 
 

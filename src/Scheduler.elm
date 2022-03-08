@@ -63,6 +63,7 @@ type alias Model =
         }
     , composerSchedule : Resource String Instructions
     , scheduleName : String
+    , tickMs : Float
     }
 
 
@@ -83,6 +84,7 @@ initModel =
         }
     , composerSchedule = NotLoaded
     , scheduleName = ""
+    , tickMs = 20
     }
 
 
@@ -1192,12 +1194,8 @@ instructionsDecoder =
         (JD.field "instructions" (JD.dict <| JD.array controlCommandDecoder))
 
 
-defaultTickIntervalMilliSeconds =
-    20
-
-
 subscriptions : Model -> Sub SchedulerMsg
-subscriptions { state } =
+subscriptions { state, tickMs } =
     let
         runInstructionsSub =
             case state of
@@ -1208,7 +1206,7 @@ subscriptions { state } =
                     Sub.none
 
                 RunningInstructions _ ->
-                    Time.every defaultTickIntervalMilliSeconds SchedulerTick
+                    Time.every tickMs SchedulerTick
     in
     Sub.batch
         [ runInstructionsSub
