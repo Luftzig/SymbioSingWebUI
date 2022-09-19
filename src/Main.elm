@@ -103,7 +103,7 @@ initModel { width, height } =
     , savedSchedules = Set.empty
     , sequencerData = Sequencer.init
     , dialog = DialogHidden
-    , peerName = "SymbioSing 1"
+    , peerName = "Corsetto 1"
     , peerMessages = []
     , peerConnectionState = PeerSync.NotConnected
     , tickMs = 20
@@ -1613,7 +1613,7 @@ header { savedMenuState, savedSchedules, peerName, peerConnectionState, peerMess
             , UIFont.center
             ]
           <|
-            El.text "SymbioSing Control Panel"
+            El.text "Corsetto Control Panel"
         , El.el [ El.width <| El.fillPortion 2 ] El.none
         , UIInput.slider
             [ El.alignRight
