@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "FlowIO WebApp built with modern web technologies supporting scheduling commands on several devices in parallel",
   "source": "src",
-  "author": "Yoav Luft <luft@kth.se>, Ali Shtarbanov <softrobotics.io@gmail.com>",
+  "author": "REDACTED",
   "license": "Propietary",
   "private": true,
   "browserslist": [
@@ -21,7 +21,7 @@
     "test-watch": "elm-test-rs --watch tests/*.elm"
   },
   "dependencies": {
-    "flow-io-web-lib": "git+https://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:x-oauth-basic@github.com/Luftzig/flow-io-web-lib.git#4be505e52b5e4590f575c3522e77e6680e810fe0",
+    "flow-io-web-lib": "../flow-io-web-lib",
     "global": "^4.4.0",
     "socket.io-client": "^4.4.1"
   },
